@@ -19,7 +19,13 @@ bd create "Title" -d "description" --type task --priority 2 --json
   acceptance criteria (`--acceptance`), notes (`--notes`)
 - Priority: 0-4 or P0-P4 (0=critical, 2=medium, 4=backlog).
   NOT "high"/"medium"/"low"
-- Types: `task`, `bug`, `feature`, `epic`, `chore`
+- Types: `task`, `bug`, `feature`, `epic`, `chore`, `decision`
+  - `task` — default; discrete unit of work (implementation, research, setup)
+  - `bug` — defect or regression in existing behavior
+  - `feature` — new user-facing capability
+  - `epic` — container for child beads; not directly implementable
+  - `chore` — maintenance, refactoring, or infrastructure with no user-visible change
+  - `decision` — architectural or design decision to record (aliases: `dec`, `adr`)
 
 ## Updating Issues
 
@@ -54,13 +60,36 @@ bd blocked --json                      # Blocked issues
 
 ## Filing Discovered Work
 
-When you find something that needs attention while working on another task:
+When you find something that needs attention while working on another task,
+file it immediately. Always set the type and priority explicitly based on
+what you discovered:
 
 ```
-bd create "Found issue" -d "Details" --deps discovered-from:<current-bead-id> --json
+bd create "Found issue" -d "Details" --type bug --priority 1 --deps discovered-from:<current-bead-id> --json
 ```
 
 This creates the new issue and links it back to the bead where you discovered it.
+Adjust `--type` and `--priority` to match the nature and urgency of the issue.
+
+### Discovered Work Within Epics
+
+When you discover work while executing an epic and the issue is important to
+the success of that epic:
+
+1. Create it as a child of the epic with `--parent <epic-id>`.
+2. Add a dependency from the review bead to the new bead so the review
+   cannot close until the new work is done:
+   `bd dep add <review-bead-id> <new-bead-id>`
+
+If you discover the issue **while executing the review bead**:
+
+1. Create the child bead and wire the dependency as above.
+2. Stop the review immediately — the review bead is now blocked by the
+   new bead and cannot be closed anyway.
+3. Set the review bead back to open: `bd update <review-bead-id> --status open`
+4. Work the new bead to unblock the review.
+5. When the review bead appears in the ready queue again, restart the
+   review from scratch.
 
 ## Sync
 

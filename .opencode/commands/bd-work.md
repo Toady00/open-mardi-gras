@@ -14,8 +14,10 @@ Your workflow:
 3. Claim the issue: `bd update <id> --claim`
 4. Read the full description: `bd show <id>`
 5. Implement what the description says.
-6. If you discover new work while implementing:
-   `bd create "Title" -d "Details" --deps discovered-from:<id> --json`
+6. If you discover new work while implementing, file it immediately.
+   Refer to the "Filing Discovered Work" section in the `beads-commands` skill
+   for the command format, type/priority guidance, and how to handle
+   discovered work within epics.
 7. When done: `bd close <id> --reason "what you did" --json`
 8. Run: `bd sync`
 9. Go back to step 1.
