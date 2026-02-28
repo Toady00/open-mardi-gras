@@ -19,6 +19,8 @@ export default [
     rules: {
       ...eslint.configs.recommended.rules,
       ...eslint.configs["recommended-type-checked"].rules,
+      "@typescript-eslint/no-empty-object-type": ["error", { allowInterfaces: "always" }],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },
 ]

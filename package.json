@@ -5,6 +5,12 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
     "dist/",
     "LICENSE",
@@ -16,7 +22,7 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "clean": "rm -rf dist/",
-    "prepublishOnly": "bun run clean && bun run build",
+    "prepublishOnly": "npm run clean && npm run build",
     "dev": "tsc --watch"
   },
   "engines": {
@@ -30,9 +36,20 @@
     "eslint": "^9.0.0",
     "typescript": "^5.0.0"
   },
+  "author": "Brandon Dennis",
   "license": "MIT",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "workflow",
+    "automation"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/toady00/open-mardis-gras.git"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/toady00/open-mardis-gras/issues"
+  },
+  "homepage": "https://github.com/toady00/open-mardis-gras#readme"
 }

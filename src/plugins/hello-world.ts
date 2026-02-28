@@ -1,20 +1,22 @@
 import type { Plugin } from "@opencode-ai/plugin"
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface HelloWorldPluginConfig {
   // Reserved for future configuration options
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const HelloWorldPlugin = (config?: HelloWorldPluginConfig): Plugin => {
+export const HelloWorldPlugin = (_config?: HelloWorldPluginConfig): Plugin => {
   return async ({ client }) => {
-    await client.app.log({
-      body: {
-        service: "open-mardi-gras",
-        level: "info",
-        message: "HelloWorldPlugin initialized",
-      },
-    })
+    try {
+      await client.app.log({
+        body: {
+          service: "open-mardi-gras",
+          level: "info",
+          message: "HelloWorldPlugin initialized",
+        },
+      })
+    } catch {
+      // Log failure should not prevent plugin from loading
+    }
 
     return {
       // Empty hooks object - this plugin just validates wiring
