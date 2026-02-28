@@ -46,24 +46,50 @@ After your command executes, the plugin automatically submits the return value a
 ## Installation
 
 ```bash
-opencode plugin install toady00/open-mardi-gras
+npm install open-mardi-gras
 ```
 
-## Configuration
+## Plugin Usage
 
 Add to your `opencode.config.ts`:
 
 ```typescript
+// Option 1: String reference (simplest)
 export default defineConfig({
   plugins: [
     'open-mardi-gras'
   ]
 })
+
+// Option 2: Import with configuration
+import { HelloWorldPlugin } from 'open-mardi-gras'
+
+export default defineConfig({
+  plugins: [
+    HelloWorldPlugin({ /* options */ })
+  ]
+})
 ```
 
-## Development
+## Development Setup
 
-This plugin is in active development. Features are being added incrementally based on real-world use.
+```bash
+# Install dependencies
+bun install
+
+# Build the project
+bun run build
+
+# Run linter
+bun run lint
+
+# Watch mode (rebuild on changes)
+bun run dev
+```
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you'd like to change. Make sure to run `bun run lint` and `bun run build` before submitting a pull request.
 
 ## License
 
