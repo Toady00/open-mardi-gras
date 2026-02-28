@@ -8,40 +8,93 @@ This plugin combines ideas from multiple sources to create a cohesive set of too
 
 ## Features
 
-### 🔄 Return (Command Chaining)
+### Then Chaining
 
-Execute follow-up actions automatically when a command completes. Inspired by similar functionality in other tools, but built with flexibility in mind.
+Deterministic follow-up execution after OpenCode commands complete. Commands are normally one-shot: you run a slash command, the model responds, and the conversation continues freely. Then chaining lets you declaratively specify what happens next, enabling reliable multi-step workflows from composable command files.
 
-**How it works:**
-Add a `return` key to your command's frontmatter:
+#### Quick Start
 
-```yaml
----
-return: "Summarize the output in 3 bullet points"
----
-```
-
-Or chain to another command:
+Add a `then` key to any command's YAML frontmatter:
 
 ```yaml
 ---
-return: "/my-next-command"
+description: Review the current PR
+then: "Summarize your findings in 3 bullet points"
 ---
+Review the open PR for correctness, style, and test coverage.
 ```
 
-After your command executes, the plugin automatically submits the return value as the next message — whether that's a text prompt to send to the AI or another command to run.
+After the model finishes the review, the plugin automatically injects the summary prompt as the next message. The model then responds to it in the same session.
 
-**Use cases:**
-- Automatically summarize long outputs
-- Chain multiple commands into a single workflow
-- Ensure consistent follow-up prompts after specific tasks
-- Create "macros" that combine multiple operations
+#### Frontmatter Syntax
 
-### 📿 Beads Integration
+**Single prompt** -- a plain text follow-up message:
 
-[Beads](https://github.com/steveyegge/beads) is a powerful notation for thought sequences. This plugin integrates beads workflows into opencode for structured thinking and problem-solving.
+```yaml
+then: "Summarize your findings in 3 bullet points"
+```
 
-*(Coming soon)*
+**Single command** -- invoke another slash command:
+
+```yaml
+then: "/generate-report"
+```
+
+**Ordered sequence** -- execute multiple steps in order:
+
+```yaml
+then:
+  - "Check for any uncommitted changes and report them"
+  - "/run-tests"
+  - "/bump-version"
+  - "Summarize everything that happened above"
+```
+
+Each entry fires only after the previous one has fully completed.
+
+#### Behavior
+
+- **Prompts** (entries without a leading `/`) are injected as user messages. The model sees and responds to them normally.
+- **Commands** (entries starting with `/`) are executed as if the user had typed them. Arguments are supported: `then: "/deploy staging"` passes `"staging"` to the `/deploy` command.
+- **Nested chains**: commands invoked via `then` can themselves have `then` chains. These execute depth-first -- the inner chain completes fully before the outer chain advances.
+- **User interruption**: if you manually invoke a command while a chain is running, the chain is interrupted. Your explicit action always takes priority.
+
+#### Configuration
+
+```typescript
+import { defineConfig } from "@opencode-ai/config"
+import { ThenChainingPlugin } from "open-mardi-gras"
+
+export default defineConfig({
+  plugins: [
+    ThenChainingPlugin({
+      // Maximum depth for nested then chains (default: 10)
+      maxDepth: 10,
+
+      // How to handle OpenCode's synthetic follow-up messages
+      // when no then chain is active.
+      // "keep" (default) - leave them alone
+      // "remove" - strip them silently
+      // "replace" - substitute with a custom prompt
+      syntheticMessageBehavior: "keep",
+
+      // Custom prompt used when syntheticMessageBehavior is "replace"
+      defaultFollowUp: "What should we do next?",
+    })
+  ]
+})
+```
+
+#### Edge Cases
+
+- **Empty `then` values**: an empty string or empty array is treated as a no-op. No chaining occurs.
+- **Invalid command references**: if a `then` entry references a command that doesn't exist, it is skipped with a warning. The chain continues with the next entry.
+- **Session termination**: if the session ends mid-chain, the chain is abandoned.
+- **Recursion guard**: nested chains enforce a maximum depth (default 10). When the limit is reached, the chain halts with a warning.
+
+#### Non-Goals
+
+Conditional chaining, parallel execution, result interpolation between steps, and dynamic `then` values are not currently supported.
 
 ## Installation
 
@@ -54,19 +107,12 @@ npm install open-mardi-gras
 Add to your `opencode.config.ts`:
 
 ```typescript
-// Option 1: String reference (simplest)
-export default defineConfig({
-  plugins: [
-    'open-mardi-gras'
-  ]
-})
-
-// Option 2: Import with configuration
-import { HelloWorldPlugin } from 'open-mardi-gras'
+import { defineConfig } from "@opencode-ai/config"
+import { ThenChainingPlugin } from 'open-mardi-gras'
 
 export default defineConfig({
   plugins: [
-    HelloWorldPlugin({ /* options */ })
+    ThenChainingPlugin()
   ]
 })
 ```

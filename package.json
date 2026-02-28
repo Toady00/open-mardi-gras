@@ -18,18 +18,21 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "clean": "rm -rf dist/",
     "prepublishOnly": "npm run clean && npm run build",
-    "dev": "tsc --watch"
+    "dev": "tsc -p tsconfig.build.json --watch"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.2.10",
+    "@types/bun": "^1.3.9",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
@@ -51,5 +54,8 @@
   "bugs": {
     "url": "https://github.com/toady00/open-mardis-gras/issues"
   },
-  "homepage": "https://github.com/toady00/open-mardis-gras#readme"
+  "homepage": "https://github.com/toady00/open-mardis-gras#readme",
+  "dependencies": {
+    "js-yaml": "^4.1.1"
+  }
 }
