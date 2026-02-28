@@ -33,6 +33,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/toady00/open-mardis-gras"
+    "url": "git+https://github.com/toady00/open-mardis-gras.git"
   }
 }
