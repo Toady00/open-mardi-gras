@@ -1,0 +1,24 @@
+import eslint from "@typescript-eslint/eslint-plugin"
+import parser from "@typescript-eslint/parser"
+
+export default [
+  {
+    ignores: ["dist/", "node_modules/", ".opencode/"],
+  },
+  {
+    files: ["src/**/*.ts"],
+    languageOptions: {
+      parser,
+      parserOptions: {
+        project: "./tsconfig.json",
+      },
+    },
+    plugins: {
+      "@typescript-eslint": eslint,
+    },
+    rules: {
+      ...eslint.configs.recommended.rules,
+      ...eslint.configs["recommended-type-checked"].rules,
+    },
+  },
+]
