@@ -158,6 +158,22 @@ export function assertContentOrder(
     );
     return true;
   }
+  if (indexA === indexB) {
+    // Both in same message — check character position within text
+    const text = getTextContent(messages[indexA]).toLowerCase();
+    const posA = text.indexOf(lowerA);
+    const posB = text.indexOf(lowerB);
+    if (posA < posB) {
+      console.log(
+        `✓ PASS: "${substringA}" appears before "${substringB}" within msg ${indexA}`,
+      );
+      return true;
+    }
+    console.log(
+      `✗ FAIL: "${substringA}" does not appear before "${substringB}" within msg ${indexA}`,
+    );
+    return false;
+  }
   console.log(
     `✗ FAIL: "${substringA}" (msg ${indexA}) does not appear before "${substringB}" (msg ${indexB})`,
   );

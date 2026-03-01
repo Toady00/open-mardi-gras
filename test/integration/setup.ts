@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, writeFile, mkdir, cp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
@@ -22,6 +23,9 @@ const PACKAGE_JSON = {
 
 function buildPluginSource(): string {
   const distPath = join(repoRoot, "dist", "index.js");
+  if (!existsSync(distPath)) {
+    throw new Error(`Build output not found at ${distPath}. Run 'bun run build' first.`);
+  }
   return [
     `import { ThenChainingPlugin } from "${distPath}"`,
     `export default ThenChainingPlugin({ maxDepth: 3, syntheticMessageBehavior: "remove" })`,
@@ -29,7 +33,7 @@ function buildPluginSource(): string {
   ].join("\n");
 }
 
-export async function setup(): Promise<{ tmpDir: string; cleanup: () => void }> {
+export async function setup(): Promise<{ tmpDir: string; cleanup: () => Promise<void> }> {
   const tmpDir = await mkdtemp(join(tmpdir(), "omg-verify-"));
 
   // Write opencode.json
@@ -54,8 +58,8 @@ export async function setup(): Promise<{ tmpDir: string; cleanup: () => void }> 
   await mkdir(commandsDir, { recursive: true });
   await cp(fixturesDir, commandsDir, { recursive: true });
 
-  const cleanup = () => {
-    rm(tmpDir, { recursive: true, force: true }).catch(() => {
+  const cleanup = async (): Promise<void> => {
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {
       // Best-effort cleanup
     });
   };
@@ -64,11 +68,7 @@ export async function setup(): Promise<{ tmpDir: string; cleanup: () => void }> 
 }
 
 // When run standalone, create the temp dir and print its path
-const isMainModule =
-  process.argv[1] === __filename ||
-  process.argv[1] === fileURLToPath(import.meta.url);
-
-if (isMainModule) {
+if (process.argv[1] === __filename) {
   const { tmpDir } = await setup();
   console.log(tmpDir);
 }
