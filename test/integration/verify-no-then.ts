@@ -1,0 +1,43 @@
+import {
+  createClient,
+  waitForIdle,
+  assertMessageCount,
+  assertContentPresent,
+  assertRoleSequence,
+  runVerification,
+  type MessageWithParts,
+} from "./helpers.js";
+
+runVerification("verify-no-then", async () => {
+  const client = createClient();
+
+  const session = await client.session.create({ body: { title: "verify-no-then" } });
+  if (!session.data) throw new Error("Failed to create session");
+  const sessionId = session.data.id;
+
+  await client.session.command({
+    path: { id: sessionId },
+    body: { command: "echo-back", arguments: "hello" },
+  });
+
+  await waitForIdle(client, sessionId);
+
+  const messagesResult = await client.session.messages({
+    path: { id: sessionId },
+  });
+  if (!messagesResult.data) throw new Error("Failed to fetch messages");
+  const messages = messagesResult.data as MessageWithParts[];
+
+  const results: boolean[] = [];
+
+  // 1. Exactly 2 messages (user command + assistant response)
+  results.push(assertMessageCount(messages, 2));
+
+  // 2. "hello" appears in the response
+  results.push(assertContentPresent(messages, "hello"));
+
+  // 3. Correct role alternation
+  results.push(assertRoleSequence(messages, ["user", "assistant"]));
+
+  return results;
+});
