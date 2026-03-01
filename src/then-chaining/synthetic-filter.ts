@@ -98,14 +98,27 @@ export function createSyntheticFilter(
       return
     }
 
-    // No pending prompt -- apply configured behavior for synthetic
-    // messages only. When a chain is active but hasn't dispatched yet,
-    // we leave messages untouched so the current command's LLM turn
-    // completes normally.
+    // No pending prompt. Check if the last message is synthetic.
     if (!isSyntheticMessage(lastMessage)) {
       return
     }
 
+    // When a chain is active, always suppress synthetic messages.
+    // After a subtask command completes, OpenCode injects a synthetic
+    // follow-up (e.g. "Summarize the task tool output..."). If we let
+    // this through, the LLM responds to it instead of waiting for the
+    // chain executor to advance on session.idle. Removing it prevents
+    // an unwanted LLM turn between chain steps.
+    if (stateManager.hasActiveChain(sessionID)) {
+      output.messages.pop()
+      await logger(
+        "info",
+        "Synthetic filter: suppressed synthetic message during active chain",
+      )
+      return
+    }
+
+    // No active chain — apply the user-configured behavior.
     switch (config.behavior) {
       case "keep":
         // Leave the synthetic message as-is

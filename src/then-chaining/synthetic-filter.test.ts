@@ -92,10 +92,10 @@ function makeAssistantMessage(sessionID: string) {
 
 describe("createSyntheticFilter", () => {
   describe("with active chain but no pending prompt", () => {
-    it("leaves synthetic messages alone when chain is active but no pending prompt", async () => {
+    it("removes synthetic messages when chain is active", async () => {
       const state = new ChainStateManager()
       const executor = createMockExecutor()
-      const { logger } = createMockLogger()
+      const { logger, logs } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
         executor,
@@ -113,9 +113,33 @@ describe("createSyntheticFilter", () => {
 
       await filter({}, output)
 
-      // Should NOT remove — the chain hasn't dispatched yet,
-      // so the current command's LLM turn needs this message.
-      expect(output.messages).toHaveLength(2)
+      // Synthetic message should be removed during active chain
+      // to prevent an unwanted LLM turn between chain steps.
+      expect(output.messages).toHaveLength(1)
+      expect(output.messages[0].info.role).toBe("assistant")
+      expect(logs.some((l) => l.message.includes("suppressed"))).toBe(true)
+    })
+
+    it("removes synthetic messages regardless of configured behavior", async () => {
+      const state = new ChainStateManager()
+      const executor = createMockExecutor()
+      const { logger } = createMockLogger()
+      // Even with "keep" behavior, active chain takes priority
+      const filter = createSyntheticFilter(
+        state,
+        executor,
+        { behavior: "keep" },
+        logger,
+      )
+
+      state.pushChain("s1", [prompt("next step")], "/cmd")
+
+      const messages = [makeUserMessage("s1", "synthetic follow-up", true)]
+      const output = { messages }
+
+      await filter({}, output)
+
+      expect(output.messages).toHaveLength(0)
     })
 
     it("does not remove non-synthetic messages when chain is active", async () => {
