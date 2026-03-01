@@ -1,4 +1,5 @@
 ---
+name: OMG Decomposer
 description: Systematic planner that decomposes specs into child tasks under epics
 mode: primary
 temperature: 0.1

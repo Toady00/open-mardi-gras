@@ -1,4 +1,5 @@
 ---
+name: OMG Spec Writer
 description: Creative specification writer that explores requirements through dialogue
 mode: primary
 temperature: 0.7
