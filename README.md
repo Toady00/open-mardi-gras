@@ -61,29 +61,30 @@ Each entry fires only after the previous one has fully completed.
 
 #### Configuration
 
+ThenChainingPlugin accepts optional configuration when used as a local plugin file:
+
 ```typescript
-import { defineConfig } from "@opencode-ai/config"
+// .opencode/plugins/then-chaining.ts
+import type { Plugin } from "@opencode-ai/plugin"
 import { ThenChainingPlugin } from "@toady00/open-mardi-gras"
 
-export default defineConfig({
-  plugins: [
-    ThenChainingPlugin({
-      // Maximum depth for nested then chains (default: 10)
-      maxDepth: 10,
+export const ThenChaining: Plugin = ThenChainingPlugin({
+  // Maximum depth for nested then chains (default: 10)
+  maxDepth: 10,
 
-      // How to handle OpenCode's synthetic follow-up messages
-      // when no then chain is active.
-      // "keep" (default) - leave them alone
-      // "remove" - strip them silently
-      // "replace" - substitute with a custom prompt
-      syntheticMessageBehavior: "keep",
+  // How to handle OpenCode's synthetic follow-up messages
+  // when no then chain is active.
+  // "keep" (default) - leave them alone
+  // "remove" - strip them silently
+  // "replace" - substitute with a custom prompt
+  syntheticMessageBehavior: "keep",
 
-      // Custom prompt used when syntheticMessageBehavior is "replace"
-      defaultFollowUp: "What should we do next?",
-    })
-  ]
+  // Custom prompt used when syntheticMessageBehavior is "replace"
+  defaultFollowUp: "What should we do next?",
 })
 ```
+
+When installed via npm in `opencode.json`, the plugin uses default settings.
 
 #### Edge Cases
 
@@ -112,7 +113,7 @@ Deterministic follow-up execution after OpenCode commands complete. See the [The
 
 ### BeadsPlugin
 
-Integrates [beads](https://github.com/toady00/beads) issue tracking into your OpenCode sessions. On each session start, the plugin runs `bd sync` and `bd prime` to inject project context, and re-injects after session compaction. It also syncs beads state on session idle.
+Integrates [beads](https://github.com/toady00/beads) issue tracking into your OpenCode sessions. The plugin appends `bd prime` output to the system prompt so beads context is available on every LLM call. Context is refreshed automatically after session compaction. The plugin also runs `bd sync` on session idle to keep beads state in sync.
 
 #### Prerequisites
 
@@ -133,23 +134,53 @@ npx @toady00/open-mardi-gras setup
 
 This copies files into your `.opencode/` directory and writes a `.workflow.yaml` config file. Run it again after upgrading to pick up new versions of the workflow files.
 
-### Plugin Usage
+### Plugin Installation
 
-Add one or both plugins to your `opencode.config.ts`:
+#### From npm (recommended)
 
-```typescript
-import { defineConfig } from "@opencode-ai/config"
-import { ThenChainingPlugin, BeadsPlugin } from '@toady00/open-mardi-gras'
+Add the package name to the `plugin` array in your `opencode.json` config file. This can be either project-level or global:
 
-export default defineConfig({
-  plugins: [
-    ThenChainingPlugin(),
-    BeadsPlugin()
-  ]
-})
+- **Project**: `opencode.json` in your project root
+- **Global**: `~/.config/opencode/opencode.json`
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@toady00/open-mardi-gras"]
+}
 ```
 
-Both plugins can be used together safely. The PluginCoordinator handles coordination automatically — beads context injection is deferred while a then-chain is active, and fires once the chain completes.
+OpenCode automatically installs npm plugins at startup.
+
+#### From local files
+
+Alternatively, create wrapper files in your plugin directory:
+
+- **Project**: `.opencode/plugins/`
+- **Global**: `~/.config/opencode/plugins/`
+
+```typescript
+// .opencode/plugins/open-mardi-gras.ts
+import type { Plugin } from "@opencode-ai/plugin"
+import { ThenChainingPlugin, BeadsPlugin } from "@toady00/open-mardi-gras"
+
+export const ThenChaining: Plugin = ThenChainingPlugin()
+export const Beads: Plugin = BeadsPlugin()
+```
+
+Local plugins require the package to be listed as a dependency in `.opencode/package.json`:
+
+```json
+{
+  "dependencies": {
+    "@toady00/open-mardi-gras": "latest"
+  }
+}
+```
+
+#### Notes
+
+Both plugins can be used together safely. Beads context is injected via the system prompt, so it never interferes with then-chain execution.
 
 ## Development Setup
 
