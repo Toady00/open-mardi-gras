@@ -3,6 +3,7 @@ import {
   waitForIdle,
   assertMessageCount,
   assertContentPresent,
+  assertContentPresentInRole,
   assertContentOrder,
   runVerification,
   type MessageWithParts,
@@ -41,19 +42,7 @@ runVerification("verify-then-prompt", async () => {
   results.push(assertContentOrder(messages, "hello", "goodbye"));
 
   // 4. "Now say goodbye" appears in a user-role message (injected by plugin)
-  const userMessages = messages.filter((m) => m.info.role === "user");
-  const hasInjectedGoodbye = userMessages.some((m) =>
-    m.parts
-      .filter((p) => p.type === "text")
-      .some((p) => (p as { text: string }).text.toLowerCase().includes("now say goodbye")),
-  );
-  if (hasInjectedGoodbye) {
-    console.log('✓ PASS: "Now say goodbye" found in a user-role message (injected by plugin)');
-    results.push(true);
-  } else {
-    console.log('✗ FAIL: "Now say goodbye" not found in any user-role message');
-    results.push(false);
-  }
+  results.push(assertContentPresentInRole(messages, "Now say goodbye", "user"));
 
   return results;
 });

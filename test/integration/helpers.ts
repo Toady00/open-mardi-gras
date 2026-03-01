@@ -108,6 +108,24 @@ export function assertContentAbsent(
   return false;
 }
 
+export function assertContentPresentInRole(
+  messages: MessageWithParts[],
+  substring: string,
+  role: "user" | "assistant",
+): boolean {
+  const lower = substring.toLowerCase();
+  const filtered = messages.filter((m) => m.info.role === role);
+  const found = filtered.some((m) =>
+    getTextContent(m).toLowerCase().includes(lower),
+  );
+  if (found) {
+    console.log(`✓ PASS: "${substring}" found in a ${role} message`);
+    return true;
+  }
+  console.log(`✗ FAIL: "${substring}" not found in any ${role} message`);
+  return false;
+}
+
 export function assertContentOrder(
   messages: MessageWithParts[],
   substringA: string,

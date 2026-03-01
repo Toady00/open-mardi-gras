@@ -3,6 +3,7 @@ import {
   waitForIdle,
   assertMessageCount,
   assertContentPresent,
+  assertContentPresentInRole,
   assertContentOrder,
   runVerification,
   type MessageWithParts,
@@ -44,19 +45,7 @@ runVerification("verify-then-sequence", async () => {
   results.push(assertContentOrder(messages, "octop", "done"));
 
   // 5. "Summarize" appears in a user-role message (injected prompt)
-  const userMessages = messages.filter((m) => m.info.role === "user");
-  const hasSummarize = userMessages.some((m) =>
-    m.parts
-      .filter((p) => p.type === "text")
-      .some((p) => (p as { text: string }).text.toLowerCase().includes("summarize")),
-  );
-  if (hasSummarize) {
-    console.log('✓ PASS: "Summarize" found in a user-role message (injected prompt)');
-    results.push(true);
-  } else {
-    console.log('✗ FAIL: "Summarize" not found in any user-role message');
-    results.push(false);
-  }
+  results.push(assertContentPresentInRole(messages, "Summarize", "user"));
 
   return results;
 });
