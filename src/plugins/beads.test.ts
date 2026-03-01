@@ -2,10 +2,6 @@ import { describe, expect, it, mock } from "bun:test"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { BeadsPlugin } from "./beads.js"
 
-// Mock the coordinator module — we need to control isChainActive/onChainComplete
-// We can't easily mock the module-level singleton, so we test through the
-// plugin's behavior with a fresh coordinator for integration-style tests.
-
 function createMockShell(primeOutput = "mock beads context") {
   const syncCalls: number[] = []
   const primeCalls: number[] = []
@@ -23,38 +19,28 @@ function createMockShell(primeOutput = "mock beads context") {
       primeCalls.push(callCount)
       return { text: mock(() => Promise.resolve(primeOutput)) }
     }
-    return { quiet: mock(() => Promise.resolve()), text: mock(() => Promise.resolve("")) }
+    return {
+      quiet: mock(() => Promise.resolve()),
+      text: mock(() => Promise.resolve("")),
+    }
   }
 
   return { $: $ as unknown as PluginInput["$"], syncCalls, primeCalls }
 }
 
-function createMockClient(existingMessages: unknown[] = []) {
-  const promptCalls: Array<{ sessionID: string; text: string }> = []
+function createMockClient() {
   const logCalls: Array<{ level: string; message: string }> = []
 
   const client = {
-    session: {
-      prompt: mock(async (opts: { path: { id: string }; body: { parts: Array<{ text: string }> } }) => {
-        promptCalls.push({
-          sessionID: opts.path.id,
-          text: opts.body.parts[0].text,
-        })
-        return { data: {} }
-      }),
-      messages: mock(async () => ({
-        data: existingMessages,
-      })),
-    },
     app: {
-      log: mock(async (opts: { body: { level: string; message: string } }) => {
+      log: mock(async (opts: any) => {
         logCalls.push({ level: opts.body.level, message: opts.body.message })
         return {}
       }),
     },
   } as unknown as PluginInput["client"]
 
-  return { client, promptCalls, logCalls }
+  return { client, logCalls }
 }
 
 describe("BeadsPlugin", () => {
@@ -67,78 +53,138 @@ describe("BeadsPlugin", () => {
     const { client } = createMockClient()
     const { $ } = createMockShell()
     const plugin = BeadsPlugin()
-    const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
+    const hooks = await plugin({
+      client,
+      $,
+      directory: "/tmp",
+    } as unknown as PluginInput)
     expect(hooks).toBeDefined()
-    expect(hooks["chat.message"]).toBeDefined()
+    expect(hooks["experimental.chat.system.transform"]).toBeDefined()
     expect(hooks.event).toBeDefined()
+    // Should NOT have chat.message (we moved to system.transform)
+    expect(hooks["chat.message"]).toBeUndefined()
   })
 
-  describe("chat.message", () => {
-    it("triggers injection on first user message", async () => {
-      const { client, promptCalls } = createMockClient()
+  describe("experimental.chat.system.transform", () => {
+    it("appends beads context to system prompt on first call", async () => {
+      const { client } = createMockClient()
       const { $ } = createMockShell("beads prime output")
       const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
 
-      await hooks["chat.message"]!(
+      const system: string[] = ["existing system prompt"]
+      await hooks["experimental.chat.system.transform"]!(
         { sessionID: "s1" } as any,
-        { message: { sessionID: "s1", model: undefined, agent: undefined } } as any,
+        { system },
       )
 
-      expect(promptCalls.length).toBe(1)
-      expect(promptCalls[0].sessionID).toBe("s1")
-      expect(promptCalls[0].text).toContain("<beads-context>")
-      expect(promptCalls[0].text).toContain("beads prime output")
+      expect(system.length).toBe(2)
+      expect(system[0]).toBe("existing system prompt")
+      expect(system[1]).toContain("<beads-context>")
+      expect(system[1]).toContain("beads prime output")
+      expect(system[1]).toContain("<beads-guidance>")
     })
 
-    it("skips injection on second message in same session", async () => {
-      const { client, promptCalls } = createMockClient()
-      const { $ } = createMockShell("output")
+    it("caches context and reuses on subsequent calls", async () => {
+      const { client } = createMockClient()
+      const { $, primeCalls } = createMockShell("cached output")
       const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
 
-      const input = { sessionID: "s1" } as any
-      const output = { message: { sessionID: "s1" } } as any
-
-      await hooks["chat.message"]!(input, output)
-      await hooks["chat.message"]!(input, output)
-
-      // Only one injection
-      expect(promptCalls.length).toBe(1)
-    })
-
-    it("skips injection when beads context already exists in messages", async () => {
-      const existingMessages = [
-        {
-          info: { role: "user" },
-          parts: [{ type: "text", text: "some <beads-context> stuff" }],
-        },
-      ]
-      const { client, promptCalls } = createMockClient(existingMessages)
-      const { $ } = createMockShell("output")
-      const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
-
-      await hooks["chat.message"]!(
+      const system1: string[] = []
+      const system2: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
         { sessionID: "s1" } as any,
-        { message: { sessionID: "s1" } } as any,
+        { system: system1 },
+      )
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s1" } as any,
+        { system: system2 },
       )
 
-      expect(promptCalls.length).toBe(0)
+      // bd prime should only be called once (cached)
+      expect(primeCalls.length).toBe(1)
+      // Both calls should have the context appended
+      expect(system1.length).toBe(1)
+      expect(system2.length).toBe(1)
+      expect(system1[0]).toContain("cached output")
+      expect(system2[0]).toContain("cached output")
     })
 
-    it("skips injection when bd prime returns empty output", async () => {
-      const { client, promptCalls } = createMockClient()
+    it("handles different sessions independently", async () => {
+      const { client } = createMockClient()
+      const { $, primeCalls } = createMockShell("session context")
+      const plugin = BeadsPlugin()
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
+
+      const system1: string[] = []
+      const system2: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s1" } as any,
+        { system: system1 },
+      )
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s2" } as any,
+        { system: system2 },
+      )
+
+      // Each session triggers its own bd prime call
+      expect(primeCalls.length).toBe(2)
+      expect(system1.length).toBe(1)
+      expect(system2.length).toBe(1)
+    })
+
+    it("does not append when bd prime returns empty", async () => {
+      const { client } = createMockClient()
       const { $ } = createMockShell("")
       const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
 
-      await hooks["chat.message"]!(
+      const system: string[] = ["existing"]
+      await hooks["experimental.chat.system.transform"]!(
         { sessionID: "s1" } as any,
-        { message: { sessionID: "s1" } } as any,
+        { system },
       )
 
-      expect(promptCalls.length).toBe(0)
+      // Should not have appended anything
+      expect(system.length).toBe(1)
+      expect(system[0]).toBe("existing")
+    })
+
+    it("skips when sessionID is missing", async () => {
+      const { client } = createMockClient()
+      const { $, primeCalls } = createMockShell("output")
+      const plugin = BeadsPlugin()
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
+
+      const system: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
+        {} as any,
+        { system },
+      )
+
+      expect(primeCalls.length).toBe(0)
+      expect(system.length).toBe(0)
     })
   })
 
@@ -147,30 +193,61 @@ describe("BeadsPlugin", () => {
       const { client } = createMockClient()
       const { $, syncCalls } = createMockShell()
       const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
 
-      await hooks.event!(
-        { event: { type: "session.idle", properties: { sessionID: "s1" } } } as any,
-      )
+      await hooks.event!({
+        event: {
+          type: "session.idle",
+          properties: { sessionID: "s1" },
+        },
+      } as any)
 
-      // sync is called: once during init log + once for idle
       expect(syncCalls.length).toBeGreaterThan(0)
     })
   })
 
   describe("event: session.compacted", () => {
-    it("triggers re-injection on session compacted", async () => {
-      const { client, promptCalls } = createMockClient()
-      const { $ } = createMockShell("prime output")
+    it("refreshes context on next system.transform after compaction", async () => {
+      const { client } = createMockClient()
+      const { $, primeCalls } = createMockShell("prime output")
       const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $, directory: "/tmp" } as unknown as PluginInput)
+      const hooks = await plugin({
+        client,
+        $,
+        directory: "/tmp",
+      } as unknown as PluginInput)
 
-      await hooks.event!(
-        { event: { type: "session.compacted", properties: { sessionID: "s1" } } } as any,
+      // First system.transform — fetches and caches
+      const system1: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s1" } as any,
+        { system: system1 },
+      )
+      expect(primeCalls.length).toBe(1)
+
+      // Trigger compaction
+      await hooks.event!({
+        event: {
+          type: "session.compacted",
+          properties: { sessionID: "s1" },
+        },
+      } as any)
+
+      // Next system.transform should re-fetch (cache was invalidated)
+      const system2: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s1" } as any,
+        { system: system2 },
       )
 
-      expect(promptCalls.length).toBe(1)
-      expect(promptCalls[0].text).toContain("<beads-context>")
+      // bd prime called twice: once initial, once after compaction refresh
+      expect(primeCalls.length).toBe(2)
+      expect(system2.length).toBe(1)
+      expect(system2[0]).toContain("<beads-context>")
     })
   })
 
@@ -185,18 +262,62 @@ describe("BeadsPlugin", () => {
       }) as unknown as PluginInput["$"]
 
       const plugin = BeadsPlugin()
-      const hooks = await plugin({ client, $: failingShell, directory: "/tmp" } as unknown as PluginInput)
+      const hooks = await plugin({
+        client,
+        $: failingShell,
+        directory: "/tmp",
+      } as unknown as PluginInput)
 
-      // Should not throw
-      await hooks["chat.message"]!(
+      // system.transform should not throw
+      const system: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
         { sessionID: "s1" } as any,
-        { message: { sessionID: "s1" } } as any,
+        { system },
+      )
+      // Nothing appended since bd failed
+      expect(system.length).toBe(0)
+
+      // idle event should not throw
+      await hooks.event!({
+        event: {
+          type: "session.idle",
+          properties: { sessionID: "s1" },
+        },
+      } as any)
+    })
+
+    it("caches empty result on failure to avoid retrying every call", async () => {
+      const { client } = createMockClient()
+      let callCount = 0
+      const failingShell = ((_strings: TemplateStringsArray) => {
+        callCount++
+        return {
+          quiet: () => Promise.reject(new Error("bd not found")),
+          text: () => Promise.reject(new Error("bd not found")),
+        }
+      }) as unknown as PluginInput["$"]
+
+      const plugin = BeadsPlugin()
+      const hooks = await plugin({
+        client,
+        $: failingShell,
+        directory: "/tmp",
+      } as unknown as PluginInput)
+
+      const system1: string[] = []
+      const system2: string[] = []
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s1" } as any,
+        { system: system1 },
+      )
+      const callsAfterFirst = callCount
+      await hooks["experimental.chat.system.transform"]!(
+        { sessionID: "s1" } as any,
+        { system: system2 },
       )
 
-      // Should not throw
-      await hooks.event!(
-        { event: { type: "session.idle", properties: { sessionID: "s1" } } } as any,
-      )
+      // Second call should not invoke shell again (cached empty)
+      expect(callCount).toBe(callsAfterFirst)
     })
   })
 })
