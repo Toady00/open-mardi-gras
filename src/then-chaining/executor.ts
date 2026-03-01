@@ -1,6 +1,15 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { ChainStateManager } from "./state.js"
 
+/** Agent/model context needed when dispatching prompts and commands */
+export interface SessionContext {
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+}
+
 export class ChainExecutor {
   /**
    * Set of session IDs where the executor is currently dispatching
@@ -17,6 +26,17 @@ export class ChainExecutor {
    */
   readonly pendingDispatches: Set<string> = new Set()
 
+  /** Stored session context (agent/model) per session for dispatching */
+  private sessionContexts: Map<string, SessionContext> = new Map()
+
+  /**
+   * Pending prompt text per session. Set by processNext() for prompt
+   * entries, consumed by the transform hook which replaces OpenCode's
+   * generic synthetic message with this text. This two-phase approach
+   * ensures the LLM actually sees and responds to the prompt.
+   */
+  readonly pendingPrompts: Map<string, string> = new Map()
+
   constructor(
     private client: PluginInput["client"],
     private stateManager: ChainStateManager,
@@ -27,12 +47,47 @@ export class ChainExecutor {
   ) {}
 
   /**
+   * Store the agent/model context for a session so dispatches can
+   * forward it to the OpenCode server.
+   */
+  setSessionContext(sessionID: string, context: SessionContext): void {
+    this.sessionContexts.set(sessionID, context)
+  }
+
+  /**
+   * Clear stored context for a session (called when chain completes).
+   */
+  clearSessionContext(sessionID: string): void {
+    this.sessionContexts.delete(sessionID)
+  }
+
+  /**
+   * Consume and return the pending prompt for a session (if any).
+   * Called by the transform hook to get the text to inject.
+   */
+  consumePendingPrompt(sessionID: string): string | undefined {
+    const prompt = this.pendingPrompts.get(sessionID)
+    if (prompt !== undefined) {
+      this.pendingPrompts.delete(sessionID)
+    }
+    return prompt
+  }
+
+  /**
    * Process the next entry in the active chain for a session.
-   * Called when a command or prompt response completes.
+   * Called from session.idle when the LLM finishes responding.
+   *
+   * For prompt entries: stores the prompt text as pending and calls
+   * promptAsync to trigger a new LLM turn. The transform hook will
+   * replace the synthetic message with the pending prompt text.
+   *
+   * For command entries: calls session.command directly.
    *
    * Returns true if an entry was dispatched, false if the chain is complete.
    */
   async processNext(sessionID: string): Promise<boolean> {
+    const context = this.sessionContexts.get(sessionID)
+
     // Iterative loop handles both frame unwinding and error recovery
     // without recursive calls to processNext.
     while (true) {
@@ -46,7 +101,8 @@ export class ChainExecutor {
           continue // try the parent frame
         }
 
-        // Chain is fully complete
+        // Chain is fully complete — clean up context
+        this.clearSessionContext(sessionID)
         return false
       }
 
@@ -60,8 +116,19 @@ export class ChainExecutor {
             "info",
             `Then chain: injecting prompt: "${preview}"`,
           )
-          await this.client.session.prompt({
+
+          // Phase 1: Store the prompt so the transform hook can inject
+          // it into the LLM's message array by replacing OpenCode's
+          // generic synthetic message.
+          this.pendingPrompts.set(sessionID, entry.value)
+
+          // Phase 2: Fire promptAsync to trigger a new LLM turn.
+          // The transform hook will replace the synthetic message with
+          // our pending prompt text before the LLM sees it.
+          await this.client.session.promptAsync({
             body: {
+              agent: context?.agent,
+              model: context?.model,
               parts: [
                 {
                   type: "text",
@@ -75,6 +142,7 @@ export class ChainExecutor {
           })
           return true
         } catch (err) {
+          this.pendingPrompts.delete(sessionID)
           await this.logger(
             "error",
             `Then chain: failed to inject prompt: ${err instanceof Error ? err.message : String(err)}`,
@@ -85,27 +153,34 @@ export class ChainExecutor {
       }
 
       // entry.type === "command"
-      // Split into command name and arguments
-      const spaceIndex = entry.value.indexOf(" ")
+      // Split into command name and arguments.
+      // Strip the leading "/" — the frontmatter uses "/cmd" syntax to
+      // distinguish commands from prompts, but the session.command API
+      // and command.execute.before hook receive the name without it.
+      const raw = entry.value.startsWith("/")
+        ? entry.value.slice(1)
+        : entry.value
+      const spaceIndex = raw.indexOf(" ")
       let commandName: string
       let args: string
       if (spaceIndex === -1) {
-        commandName = entry.value
+        commandName = raw
         args = ""
       } else {
-        commandName = entry.value.substring(0, spaceIndex)
-        args = entry.value.substring(spaceIndex + 1)
+        commandName = raw.substring(0, spaceIndex)
+        args = raw.substring(spaceIndex + 1)
       }
 
       this.pendingDispatches.add(sessionID)
       try {
         await this.logger(
           "info",
-          `Then chain: executing command: ${entry.value}`,
+          `Then chain: executing command: ${commandName} (args: "${args}")`,
         )
         await this.client.session.command({
           body: {
             command: commandName,
+            agent: context?.agent,
             arguments: args,
           },
           path: {

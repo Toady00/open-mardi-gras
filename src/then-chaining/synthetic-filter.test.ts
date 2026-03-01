@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import type { ChainExecutor } from "./executor.js"
 import type { ThenEntry } from "./frontmatter.js"
 import { ChainStateManager } from "./state.js"
 import { createSyntheticFilter } from "./synthetic-filter.js"
@@ -13,6 +14,21 @@ function createMockLogger() {
     logs.push({ level, message })
   }
   return { logger, logs }
+}
+
+function createMockExecutor(): ChainExecutor {
+  const pendingPrompts = new Map<string, string>()
+  return {
+    pendingDispatches: new Set(),
+    pendingPrompts,
+    consumePendingPrompt(sessionID: string) {
+      const p = pendingPrompts.get(sessionID)
+      if (p !== undefined) {
+        pendingPrompts.delete(sessionID)
+      }
+      return p
+    },
+  } as unknown as ChainExecutor
 }
 
 function makeUserMessage(
@@ -55,7 +71,12 @@ function makeAssistantMessage(sessionID: string) {
       mode: "default",
       path: { cwd: "/", root: "/" },
       cost: 0,
-      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
     },
     parts: [
       {
@@ -70,12 +91,14 @@ function makeAssistantMessage(sessionID: string) {
 }
 
 describe("createSyntheticFilter", () => {
-  describe("with active chain", () => {
-    it("removes synthetic messages when chain is active", async () => {
+  describe("with active chain but no pending prompt", () => {
+    it("leaves synthetic messages alone when chain is active but no pending prompt", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "keep" },
         logger,
       )
@@ -90,15 +113,18 @@ describe("createSyntheticFilter", () => {
 
       await filter({}, output)
 
-      expect(output.messages).toHaveLength(1)
-      expect(output.messages[0].info.role).toBe("assistant")
+      // Should NOT remove — the chain hasn't dispatched yet,
+      // so the current command's LLM turn needs this message.
+      expect(output.messages).toHaveLength(2)
     })
 
     it("does not remove non-synthetic messages when chain is active", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "keep" },
         logger,
       )
@@ -114,12 +140,84 @@ describe("createSyntheticFilter", () => {
     })
   })
 
-  describe("without active chain - keep behavior", () => {
-    it("leaves synthetic messages untouched", async () => {
+  describe("pending prompt replacement", () => {
+    it("replaces last message text with pending prompt", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
+        { behavior: "keep" },
+        logger,
+      )
+
+      // Simulate the executor setting a pending prompt
+      executor.pendingPrompts.set("s1", "Summarize your findings")
+
+      const messages = [makeUserMessage("s1", "original text", false)]
+      const output = { messages }
+
+      await filter({}, output)
+
+      expect(output.messages).toHaveLength(1)
+      expect(output.messages[0].parts[0].text).toBe("Summarize your findings")
+    })
+
+    it("consumes the pending prompt after replacement", async () => {
+      const state = new ChainStateManager()
+      const executor = createMockExecutor()
+      const { logger } = createMockLogger()
+      const filter = createSyntheticFilter(
+        state,
+        executor,
+        { behavior: "keep" },
+        logger,
+      )
+
+      executor.pendingPrompts.set("s1", "Do the thing")
+
+      const messages = [makeUserMessage("s1", "original", false)]
+      const output = { messages }
+
+      await filter({}, output)
+
+      // Pending prompt should be consumed
+      expect(executor.pendingPrompts.has("s1")).toBe(false)
+    })
+
+    it("clears synthetic flag when replacing with pending prompt", async () => {
+      const state = new ChainStateManager()
+      const executor = createMockExecutor()
+      const { logger } = createMockLogger()
+      const filter = createSyntheticFilter(
+        state,
+        executor,
+        { behavior: "keep" },
+        logger,
+      )
+
+      executor.pendingPrompts.set("s1", "Next step")
+
+      const messages = [makeUserMessage("s1", "synthetic msg", true)]
+      const output = { messages }
+
+      await filter({}, output)
+
+      const part = output.messages[0].parts[0] as { synthetic?: boolean }
+      expect(part.synthetic).toBe(false)
+      expect(output.messages[0].parts[0].text).toBe("Next step")
+    })
+  })
+
+  describe("without active chain - keep behavior", () => {
+    it("leaves synthetic messages untouched", async () => {
+      const state = new ChainStateManager()
+      const executor = createMockExecutor()
+      const { logger } = createMockLogger()
+      const filter = createSyntheticFilter(
+        state,
+        executor,
         { behavior: "keep" },
         logger,
       )
@@ -137,9 +235,11 @@ describe("createSyntheticFilter", () => {
   describe("without active chain - remove behavior", () => {
     it("removes synthetic messages", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "remove" },
         logger,
       )
@@ -160,9 +260,11 @@ describe("createSyntheticFilter", () => {
   describe("without active chain - replace behavior", () => {
     it("replaces synthetic message text with defaultFollowUp", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "replace", defaultFollowUp: "What next?" },
         logger,
       )
@@ -178,9 +280,11 @@ describe("createSyntheticFilter", () => {
 
     it("clears the synthetic flag after replacement", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "replace", defaultFollowUp: "What next?" },
         logger,
       )
@@ -196,9 +300,11 @@ describe("createSyntheticFilter", () => {
 
     it("does nothing if defaultFollowUp is not set", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "replace" },
         logger,
       )
@@ -216,9 +322,11 @@ describe("createSyntheticFilter", () => {
   describe("edge cases", () => {
     it("does nothing when messages array is empty", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "remove" },
         logger,
       )
@@ -231,9 +339,11 @@ describe("createSyntheticFilter", () => {
 
     it("only checks the last message", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "remove" },
         logger,
       )
@@ -252,9 +362,11 @@ describe("createSyntheticFilter", () => {
 
     it("does not touch assistant messages", async () => {
       const state = new ChainStateManager()
+      const executor = createMockExecutor()
       const { logger } = createMockLogger()
       const filter = createSyntheticFilter(
         state,
+        executor,
         { behavior: "remove" },
         logger,
       )

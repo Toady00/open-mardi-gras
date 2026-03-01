@@ -22,12 +22,12 @@ function createMockClient() {
 
   const client = {
     session: {
-      prompt: mock(async (opts: { body: { parts: Array<{ text: string }> }; path: { id: string } }) => {
+      promptAsync: mock(async (opts: { body: { parts: Array<{ text: string }> }; path: { id: string } }) => {
         promptCalls.push({
           sessionID: opts.path.id,
           text: opts.body.parts[0].text,
         })
-        return { data: { info: {}, parts: [] } }
+        return { data: {} }
       }),
       command: mock(async (opts: { body: { command: string; arguments: string }; path: { id: string } }) => {
         commandCalls.push({
@@ -53,7 +53,7 @@ function createMockLogger() {
 
 describe("ChainExecutor", () => {
   describe("processNext with prompts", () => {
-    it("dispatches a prompt entry via client.session.prompt", async () => {
+    it("dispatches a prompt entry via client.session.promptAsync", async () => {
       const state = new ChainStateManager()
       const { client, promptCalls } = createMockClient()
       const { logger } = createMockLogger()
@@ -99,7 +99,7 @@ describe("ChainExecutor", () => {
 
       expect(result).toBe(true)
       expect(commandCalls).toHaveLength(1)
-      expect(commandCalls[0].command).toBe("/deploy")
+      expect(commandCalls[0].command).toBe("deploy")
       expect(commandCalls[0].arguments).toBe("")
     })
 
@@ -112,7 +112,7 @@ describe("ChainExecutor", () => {
       state.pushChain("s1", [command("/deploy staging --force")], "/test")
       await executor.processNext("s1")
 
-      expect(commandCalls[0].command).toBe("/deploy")
+      expect(commandCalls[0].command).toBe("deploy")
       expect(commandCalls[0].arguments).toBe("staging --force")
     })
 
@@ -123,7 +123,7 @@ describe("ChainExecutor", () => {
       let capturedPending = false
       const client = {
         session: {
-          prompt: mock(async () => ({ data: { info: {}, parts: [] } })),
+          promptAsync: mock(async () => ({ data: {} })),
           command: mock(async () => {
             // Check state during execution
             capturedPending = executor.pendingDispatches.has("s1")
@@ -150,12 +150,12 @@ describe("ChainExecutor", () => {
       let callCount = 0
       const client = {
         session: {
-          prompt: mock(async () => {
+          promptAsync: mock(async () => {
             callCount++
             if (callCount === 1) {
               throw new Error("Network error")
             }
-            return { data: { info: {}, parts: [] } }
+            return { data: {} }
           }),
           command: mock(async () => ({ data: { info: {}, parts: [] } })),
         },
@@ -177,9 +177,9 @@ describe("ChainExecutor", () => {
       const promptCalls: string[] = []
       const client = {
         session: {
-          prompt: mock(async (opts: { body: { parts: Array<{ text: string }> } }) => {
+          promptAsync: mock(async (opts: { body: { parts: Array<{ text: string }> } }) => {
             promptCalls.push(opts.body.parts[0].text)
-            return { data: { info: {}, parts: [] } }
+            return { data: {} }
           }),
           command: mock(async () => {
             throw new Error("Command not found")
@@ -205,7 +205,7 @@ describe("ChainExecutor", () => {
 
       const client = {
         session: {
-          prompt: mock(async () => ({ data: { info: {}, parts: [] } })),
+          promptAsync: mock(async () => ({ data: {} })),
           command: mock(async () => {
             throw new Error("fail")
           }),

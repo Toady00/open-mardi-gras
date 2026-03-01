@@ -154,20 +154,35 @@ export const ThenChainingPlugin = (config?: ThenChainingConfig): Plugin => {
       },
 
       "chat.message": async (input, _output) => {
-        const { sessionID } = input
+        const { sessionID, agent, model } = input
 
-        if (!stateManager.hasActiveChain(sessionID)) {
-          return
+        // Capture agent/model context so the executor can forward it
+        // when dispatching commands and prompts.
+        if (agent || model) {
+          executor.setSessionContext(sessionID, { agent, model })
         }
+      },
 
-        const dispatched = await executor.processNext(sessionID)
-        if (!dispatched) {
-          await logger("info", "Then chain: completed")
+      event: async ({ event }) => {
+        // Advance the chain when the session becomes idle (assistant
+        // finished responding). This is the reliable trigger — subtask2
+        // uses the same pattern.
+        if (event.type === "session.idle") {
+          const sessionID = event.properties.sessionID
+          if (!stateManager.hasActiveChain(sessionID)) {
+            return
+          }
+
+          const dispatched = await executor.processNext(sessionID)
+          if (!dispatched) {
+            await logger("info", "Then chain: completed")
+          }
         }
       },
 
       "experimental.chat.messages.transform": createSyntheticFilter(
         stateManager,
+        executor,
         {
           behavior: syntheticBehavior,
           defaultFollowUp: config?.defaultFollowUp,

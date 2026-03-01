@@ -5,6 +5,7 @@ export { ChainStateManager } from "./state.js"
 export type { ChainFrame, ChainState } from "./state.js"
 
 export { ChainExecutor } from "./executor.js"
+export type { SessionContext } from "./executor.js"
 
 export { createSyntheticFilter } from "./synthetic-filter.js"
 export type {
