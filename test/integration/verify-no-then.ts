@@ -33,8 +33,9 @@ runVerification("verify-no-then", async () => {
   // 1. Exactly 2 messages (user command + assistant response)
   results.push(assertMessageCount(messages, 2));
 
-  // 2. "hello" appears in the response
-  results.push(assertContentPresent(messages, "hello"));
+  // 2. "hello" appears in the assistant response (not just the user command)
+  const assistantMessages = messages.filter((m) => m.info.role === "assistant");
+  results.push(assertContentPresent(assistantMessages, "hello"));
 
   // 3. Correct role alternation
   results.push(assertRoleSequence(messages, ["user", "assistant"]));
