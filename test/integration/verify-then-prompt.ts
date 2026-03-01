@@ -15,10 +15,11 @@ runVerification("verify-then-prompt", async () => {
   if (!session.data) throw new Error("Failed to create session");
   const sessionId = session.data.id;
 
-  await client.session.command({
+  const cmdResult = await client.session.command({
     path: { id: sessionId },
     body: { command: "then-prompt", arguments: "" },
   });
+  if (cmdResult.error) throw new Error(`Command failed: ${JSON.stringify(cmdResult.error)}`);
 
   await waitForIdle(client, sessionId);
 

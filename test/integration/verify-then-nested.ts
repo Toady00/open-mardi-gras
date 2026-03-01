@@ -15,10 +15,11 @@ runVerification("verify-then-nested", async () => {
   if (!session.data) throw new Error("Failed to create session");
   const sessionId = session.data.id;
 
-  await client.session.command({
+  const cmdResult = await client.session.command({
     path: { id: sessionId },
     body: { command: "then-nested", arguments: "" },
   });
+  if (cmdResult.error) throw new Error(`Command failed: ${JSON.stringify(cmdResult.error)}`);
 
   await waitForIdle(client, sessionId, 90_000);
 
