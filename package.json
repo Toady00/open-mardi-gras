@@ -1,5 +1,5 @@
 {
-  "name": "open-mardi-gras",
+  "name": "@toady00/open-mardi-gras",
   "version": "0.1.0",
   "description": "OpenCode plugin for workflow automation and command chaining",
   "type": "module",
@@ -56,6 +56,10 @@
     "url": "https://github.com/toady00/open-mardis-gras/issues"
   },
   "homepage": "https://github.com/toady00/open-mardis-gras#readme",
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.0.0",
+    "@opencode-ai/sdk": ">=1.0.0"
+  },
   "dependencies": {
     "js-yaml": "^4.1.1"
   }
