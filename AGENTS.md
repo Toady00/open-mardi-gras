@@ -1,5 +1,13 @@
 # Agent Instructions
 
+This project has a slight meta or recursive side to it that all agents should
+be aware of. The development of this opencode plugin, represented in this code
+base, is being done with the aid of opencode. In this opencode environment,
+there are plugins installed via `.opencode/plugins/`. These have nothing to do
+with the plugin we are building. Do not confused development tools and plugins
+in the `.opencode` directory with the purpose of the plugin we are building in
+this repo. This plugin under development will be installed via npm pacakge.
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
