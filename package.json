@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "description": "OpenCode plugin for workflow automation and command chaining",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/plugin.js",
+  "types": "./dist/plugin.d.ts",
   "bin": {
     "@toady00/open-mardi-gras": "dist/cli/setup.js"
   },
   "exports": {
     ".": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
+    "./api": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }

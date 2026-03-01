@@ -66,7 +66,7 @@ ThenChainingPlugin accepts optional configuration when used as a local plugin fi
 ```typescript
 // .opencode/plugins/then-chaining.ts
 import type { Plugin } from "@opencode-ai/plugin"
-import { ThenChainingPlugin } from "@toady00/open-mardi-gras"
+import { ThenChainingPlugin } from "@toady00/open-mardi-gras/api"
 
 export const ThenChaining: Plugin = ThenChainingPlugin({
   // Maximum depth for nested then chains (default: 10)
@@ -162,11 +162,13 @@ Alternatively, create wrapper files in your plugin directory:
 ```typescript
 // .opencode/plugins/open-mardi-gras.ts
 import type { Plugin } from "@opencode-ai/plugin"
-import { ThenChainingPlugin, BeadsPlugin } from "@toady00/open-mardi-gras"
+import { ThenChainingPlugin, BeadsPlugin } from "@toady00/open-mardi-gras/api"
 
 export const ThenChaining: Plugin = ThenChainingPlugin()
 export const Beads: Plugin = BeadsPlugin()
 ```
+
+The `/api` sub-path exports configurable factory functions. Use this approach when you need to pass configuration (e.g., `ThenChainingPlugin({ maxDepth: 5 })`).
 
 Local plugins require the package to be listed as a dependency in `.opencode/package.json`:
 
