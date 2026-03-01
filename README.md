@@ -63,7 +63,7 @@ Each entry fires only after the previous one has fully completed.
 
 ```typescript
 import { defineConfig } from "@opencode-ai/config"
-import { ThenChainingPlugin } from "open-mardi-gras"
+import { ThenChainingPlugin } from "@toady00/open-mardi-gras"
 
 export default defineConfig({
   plugins: [
@@ -99,23 +99,57 @@ Conditional chaining, parallel execution, result interpolation between steps, an
 ## Installation
 
 ```bash
-npm install open-mardi-gras
+npm install @toady00/open-mardi-gras
 ```
 
-## Plugin Usage
+## Plugins
 
-Add to your `opencode.config.ts`:
+This package ships two plugins that can be used independently or together.
+
+### ThenChainingPlugin
+
+Deterministic follow-up execution after OpenCode commands complete. See the [Then Chaining](#then-chaining) section above for full documentation.
+
+### BeadsPlugin
+
+Integrates [beads](https://github.com/toady00/beads) issue tracking into your OpenCode sessions. On each session start, the plugin runs `bd sync` and `bd prime` to inject project context, and re-injects after session compaction. It also syncs beads state on session idle.
+
+#### Prerequisites
+
+BeadsPlugin requires two external tools on your `$PATH`:
+
+- **`bd`** — the [beads](https://github.com/toady00/beads) CLI for issue tracking
+- **`yq`** — YAML processor used by the workflow commands
+
+These are only required if you use BeadsPlugin. ThenChainingPlugin has no external dependencies.
+
+#### Setup
+
+Run the setup command to install workflow files (commands, agents, skills, prompts) into your project:
+
+```bash
+npx @toady00/open-mardi-gras setup
+```
+
+This copies files into your `.opencode/` directory and writes a `.workflow.yaml` config file. Run it again after upgrading to pick up new versions of the workflow files.
+
+### Plugin Usage
+
+Add one or both plugins to your `opencode.config.ts`:
 
 ```typescript
 import { defineConfig } from "@opencode-ai/config"
-import { ThenChainingPlugin } from 'open-mardi-gras'
+import { ThenChainingPlugin, BeadsPlugin } from '@toady00/open-mardi-gras'
 
 export default defineConfig({
   plugins: [
-    ThenChainingPlugin()
+    ThenChainingPlugin(),
+    BeadsPlugin()
   ]
 })
 ```
+
+Both plugins can be used together safely. The PluginCoordinator handles coordination automatically — beads context injection is deferred while a then-chain is active, and fires once the chain completes.
 
 ## Development Setup
 
@@ -125,6 +159,9 @@ bun install
 
 # Build the project
 bun run build
+
+# Run tests
+bun test
 
 # Run linter
 bun run lint

@@ -1,5 +1,6 @@
-export { HelloWorldPlugin } from "./plugins/hello-world.js"
-export type { HelloWorldPluginConfig } from "./plugins/hello-world.js"
 export { ThenChainingPlugin } from "./plugins/then-chaining.js"
 export type { ThenChainingConfig } from "./plugins/then-chaining.js"
+export { BeadsPlugin } from "./plugins/beads.js"
+export { coordinator, PluginCoordinator } from "./coordination.js"
+export type { ChainStateProvider } from "./coordination.js"
 export type * from "@opencode-ai/plugin"

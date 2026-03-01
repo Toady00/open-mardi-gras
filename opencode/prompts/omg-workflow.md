@@ -16,6 +16,5 @@ there is no native bd tool.
 Detailed command reference and epic management instructions are available as
 skills. Load them on demand to avoid context bloat:
 
-- **beads-commands** — issue creation, field updates, discovered work patterns
-- **beads-epics** — epic decomposition, dependency wiring, DAG validation
-- **adr-workflow** — ADR scanning, decision bead lifecycle, constraint linking
+- **omg-commands** — issue creation, field updates, discovered work patterns
+- **omg-epics** — epic decomposition, dependency wiring, DAG validation

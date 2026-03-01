@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
+import { coordinator } from "../coordination.js"
+import { createPluginLogger } from "../logging.js"
 import { ChainExecutor } from "../then-chaining/executor.js"
 import { parseThenChain } from "../then-chaining/frontmatter.js"
 import { ChainStateManager } from "../then-chaining/state.js"
@@ -35,18 +37,9 @@ export const ThenChainingPlugin = (config?: ThenChainingConfig): Plugin => {
 
     // Create shared instances
     const stateManager = new ChainStateManager(maxDepth)
-    const logger = async (
-      level: "info" | "warn" | "error",
-      message: string,
-    ) => {
-      try {
-        await client.app.log({
-          body: { service: "open-mardi-gras", level, message },
-        })
-      } catch {
-        // Log failure should not prevent plugin from functioning
-      }
-    }
+    coordinator.registerChainState(stateManager)
+
+    const logger = createPluginLogger(client)
     const executor = new ChainExecutor(client, stateManager, logger)
 
     await logger("info", "ThenChainingPlugin initialized")
@@ -104,6 +97,7 @@ export const ThenChainingPlugin = (config?: ThenChainingConfig): Plugin => {
               `Then chain: interrupted by user command: ${command}`,
             )
             stateManager.interrupt(sessionID)
+            coordinator.notifyChainComplete(sessionID)
           }
           return
         }
@@ -136,6 +130,7 @@ export const ThenChainingPlugin = (config?: ThenChainingConfig): Plugin => {
               `Then chain: interrupted by user command: ${command}`,
             )
             stateManager.interrupt(sessionID)
+            coordinator.notifyChainComplete(sessionID)
             // Start a fresh chain for this user command
             stateManager.pushChain(sessionID, entries, command)
             await logger(
@@ -153,6 +148,7 @@ export const ThenChainingPlugin = (config?: ThenChainingConfig): Plugin => {
         }
       },
 
+      // eslint-disable-next-line @typescript-eslint/require-await
       "chat.message": async (input, _output) => {
         const { sessionID, agent, model } = input
 
@@ -175,6 +171,7 @@ export const ThenChainingPlugin = (config?: ThenChainingConfig): Plugin => {
 
           const dispatched = await executor.processNext(sessionID)
           if (!dispatched) {
+            coordinator.notifyChainComplete(sessionID)
             await logger("info", "Then chain: completed")
           }
         }

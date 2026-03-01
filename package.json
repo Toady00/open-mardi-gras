@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "@toady00/open-mardi-gras": "dist/cli/setup.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,12 +16,13 @@
   },
   "files": [
     "dist/",
+    "opencode/",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && echo '#!/usr/bin/env node' | cat - dist/cli/setup.js > dist/cli/setup.js.tmp && mv dist/cli/setup.js.tmp dist/cli/setup.js && chmod +x dist/cli/setup.js",
     "test": "bun test",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
