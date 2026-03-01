@@ -23,25 +23,30 @@ export async function waitForIdle(
   timeoutMs = 60_000,
 ): Promise<void> {
   const { stream } = await client.event.subscribe();
-  const deadline = Date.now() + timeoutMs;
 
-  try {
-    for await (const event of stream) {
-      if (Date.now() > deadline) {
-        throw new Error(
-          `Timed out waiting for session ${sessionId} to go idle`,
-        );
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(
+      () => reject(new Error(`Timed out waiting for session ${sessionId} to go idle`)),
+      timeoutMs,
+    );
+  });
+
+  const eventLoop = async (): Promise<void> => {
+    try {
+      for await (const event of stream) {
+        if (
+          event.type === "session.idle" &&
+          event.properties.sessionID === sessionId
+        ) {
+          return;
+        }
       }
-      if (
-        event.type === "session.idle" &&
-        event.properties.sessionID === sessionId
-      ) {
-        return;
-      }
+    } finally {
+      await stream.return(undefined as void);
     }
-  } finally {
-    await stream.return(undefined as never);
-  }
+  };
+
+  await Promise.race([eventLoop(), timeoutPromise]);
 }
 
 function getTextContent(msg: MessageWithParts): string {
