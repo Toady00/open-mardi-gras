@@ -1,5 +1,4 @@
 ---
-name: OMG Build
 description: General-purpose coding agent for the OMG workflow
 mode: primary
 tools:

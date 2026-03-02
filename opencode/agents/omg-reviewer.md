@@ -1,5 +1,4 @@
 ---
-name: OMG Reviewer
 description: Thorough code reviewer that files beads for every finding
 mode: all
 temperature: 0.6
