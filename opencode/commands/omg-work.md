@@ -1,6 +1,7 @@
 ---
 description: Work through an epic's ready queue
 agent: omg-build
+then: /omg-ensure-work-finished
 ---
 
 Work through the ready queue for epic `$1`.
