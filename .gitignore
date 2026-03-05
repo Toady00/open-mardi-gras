@@ -13,3 +13,7 @@ node_modules/
 # Temporary files
 *.tmp
 *.swp
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
