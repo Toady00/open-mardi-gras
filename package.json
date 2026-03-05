@@ -1,6 +1,6 @@
 {
   "name": "@toady00/open-mardi-gras",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "OpenCode plugin for workflow automation and command chaining",
   "type": "module",
   "main": "./dist/plugin.js",
