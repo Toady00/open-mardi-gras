@@ -94,6 +94,6 @@ If you discover the issue **while executing the review bead**:
 ## Sync
 
 ```
-bd sync                                # Sync state with git
-bd sync --flush-only                   # Export to JSONL only
+bd dolt commit                         # Commit pending beads changes
+bd dolt push                           # Push to Dolt remote (if configured)
 ```

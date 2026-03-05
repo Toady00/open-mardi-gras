@@ -5,8 +5,8 @@
  * - Context injection via `bd prime` appended to the system prompt
  * - Uses experimental.chat.system.transform to inject on every LLM call
  * - Automatic refresh after compaction via `session.compacted` event
- * - Automatic `bd sync` on session idle (idempotent, no context pollution)
- * - Recovery sync before prime on every refresh (catches hard exits)
+ * - Automatic flush of pending beads state on session idle
+ * - Recovery commit before prime on every refresh (catches hard exits)
  *
  * The system.transform approach eliminates race conditions with
  * ThenChainingPlugin because system prompt injection never creates
@@ -19,7 +19,7 @@ import { createPluginLogger } from "../logging.js"
 type Shell = PluginInput["$"]
 
 /**
- * Run `bd sync` then `bd prime` and return the formatted beads context.
+ * Run `bd dolt commit` then `bd prime` and return the formatted beads context.
  * Returns null if bd is not installed, not initialized, or prime is empty.
  */
 async function fetchBeadsContext(
@@ -29,7 +29,7 @@ async function fetchBeadsContext(
   try {
     // Flush any unsaved state before reading — recovers from hard exits
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    await $`bd sync`.quiet()
+    await $`bd dolt commit`.quiet()
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
     const primeOutput: string = await $`bd prime`.text()
@@ -106,7 +106,7 @@ export function BeadsPlugin(): Plugin {
         }
       },
 
-      // Refresh beads context after compaction; auto-sync on idle
+      // Refresh beads context after compaction; auto-commit on idle
       event: async ({ event }) => {
         if (event.type === "session.compacted") {
           const sessionID = event.properties.sessionID
@@ -121,14 +121,17 @@ export function BeadsPlugin(): Plugin {
         }
 
         // Flush beads state after every agent turn.
-        // bd sync is idempotent, cheap (ms), and a no-op when beads isn't
-        // initialized. No context pollution — output goes to stderr only.
+        // bd dolt commit is idempotent, cheap, and a no-op when auto-commit
+        // is on or beads isn't initialized.
         if (event.type === "session.idle") {
           try {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-            await $`bd sync`.quiet()
-          } catch {
-            // Silent skip — bd not installed or not initialized
+            await $`bd dolt commit`.quiet()
+          } catch (err) {
+            await logger(
+              "warn",
+              `BeadsPlugin: idle flush failed: ${err instanceof Error ? err.message : String(err)}`,
+            )
           }
         }
       },

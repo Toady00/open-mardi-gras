@@ -113,7 +113,7 @@ Deterministic follow-up execution after OpenCode commands complete. See the [The
 
 ### BeadsPlugin
 
-Integrates [beads](https://github.com/toady00/beads) issue tracking into your OpenCode sessions. The plugin appends `bd prime` output to the system prompt so beads context is available on every LLM call. Context is refreshed automatically after session compaction. The plugin also runs `bd sync` on session idle to keep beads state in sync.
+Integrates [beads](https://github.com/toady00/beads) issue tracking into your OpenCode sessions. The plugin appends `bd prime` output to the system prompt so beads context is available on every LLM call. Context is refreshed automatically after session compaction. The plugin also flushes pending beads state on session idle.
 
 #### Prerequisites
 

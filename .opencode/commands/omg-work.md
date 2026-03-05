@@ -11,7 +11,7 @@ epic-level operations or dependencies, also load the `omg-epics` skill.
 
 Your workflow:
 1. Run: `bd ready --parent $1 --unassigned --json --limit 1`
-2. If no results, the epic is complete. Run: `bd epic close-eligible && bd sync`
+2. If no results, the epic is complete. Run: `bd epic close-eligible && bd dolt commit`
 3. Claim the issue: `bd update <id> --claim`
 4. Read the full description: `bd show <id>`
 5. Implement what the description says.
@@ -20,8 +20,7 @@ Your workflow:
    for the command format, type/priority guidance, and how to handle
    discovered work within epics.
 7. When done: `bd close <id> --reason "what you did" --json`
-8. Run: `bd sync`
-9. Go back to step 1.
+8. Go back to step 1.
 
 IMPORTANT: If the bead you reach is a code review bead, invoke the reviewer:
 `@omg-reviewer`

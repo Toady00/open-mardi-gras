@@ -3,7 +3,7 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import { BeadsPlugin } from "./beads.js"
 
 function createMockShell(primeOutput = "mock beads context") {
-  const syncCalls: number[] = []
+  const commitCalls: number[] = []
   const primeCalls: number[] = []
   let callCount = 0
 
@@ -11,8 +11,8 @@ function createMockShell(primeOutput = "mock beads context") {
   const $ = (strings: TemplateStringsArray) => {
     const cmd = strings[0]
     callCount++
-    if (cmd.includes("bd sync")) {
-      syncCalls.push(callCount)
+    if (cmd.includes("bd dolt commit")) {
+      commitCalls.push(callCount)
       return { quiet: mock(() => Promise.resolve()) }
     }
     if (cmd.includes("bd prime")) {
@@ -25,7 +25,7 @@ function createMockShell(primeOutput = "mock beads context") {
     }
   }
 
-  return { $: $ as unknown as PluginInput["$"], syncCalls, primeCalls }
+  return { $: $ as unknown as PluginInput["$"], commitCalls, primeCalls }
 }
 
 function createMockClient() {
@@ -189,9 +189,9 @@ describe("BeadsPlugin", () => {
   })
 
   describe("event: session.idle", () => {
-    it("runs bd sync on session idle", async () => {
+    it("runs bd dolt commit on session idle", async () => {
       const { client } = createMockClient()
-      const { $, syncCalls } = createMockShell()
+      const { $, commitCalls } = createMockShell()
       const plugin = BeadsPlugin()
       const hooks = await plugin({
         client,
@@ -206,7 +206,7 @@ describe("BeadsPlugin", () => {
         },
       } as any)
 
-      expect(syncCalls.length).toBeGreaterThan(0)
+      expect(commitCalls.length).toBeGreaterThan(0)
     })
   })
 
@@ -253,7 +253,7 @@ describe("BeadsPlugin", () => {
 
   describe("error handling", () => {
     it("does not throw when bd commands fail", async () => {
-      const { client } = createMockClient()
+      const { client, logCalls } = createMockClient()
       const failingShell = ((_strings: TemplateStringsArray) => {
         return {
           quiet: () => Promise.reject(new Error("bd not found")),
@@ -278,12 +278,19 @@ describe("BeadsPlugin", () => {
       expect(system.length).toBe(0)
 
       // idle event should not throw
+      const logCountBefore = logCalls.length
       await hooks.event!({
         event: {
           type: "session.idle",
           properties: { sessionID: "s1" },
         },
       } as any)
+
+      // idle handler should log a warning when bd dolt commit fails
+      const idleLogs = logCalls.slice(logCountBefore)
+      const warnings = idleLogs.filter((l) => l.level === "warn")
+      expect(warnings.length).toBeGreaterThan(0)
+      expect(warnings[0].message).toContain("idle flush failed")
     })
 
     it("caches empty result on failure to avoid retrying every call", async () => {

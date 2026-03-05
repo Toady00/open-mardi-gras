@@ -27,7 +27,7 @@ Steps:
    The spec file will be deleted at the end, so uncommitted changes would
    be lost:
    ```
-   bd sync
+   bd dolt commit
    git add $1 .beads/
    git status
    ```

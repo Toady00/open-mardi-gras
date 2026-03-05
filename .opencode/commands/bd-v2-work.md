@@ -1,5 +1,5 @@
 ---
-description: Work through an epic's ready queue
+description: Work through an epic's ready queue (V2)
 agent: build
 ---
 
@@ -22,7 +22,7 @@ Your workflow:
 8. Go back to step 1.
 
 IMPORTANT: If the bead you reach is a code review bead, invoke the reviewer:
-`@bd-reviewer`
+`@bd-v2-reviewer`
 Pass it the epic ID and the review bead ID so it knows what to review and what
 to close.
 

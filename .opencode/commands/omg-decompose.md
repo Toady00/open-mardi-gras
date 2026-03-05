@@ -26,11 +26,11 @@ Steps:
 4. Ensure the spec file and beads state are committed before proceeding.
    The spec file will be deleted at the end, so uncommitted changes would
    be lost:
-   ```
-   bd sync
-   git add $1 .beads/
-   git status
-   ```
+    ```
+    bd dolt commit
+    git add $1 .beads/
+    git status
+    ```
    If there are uncommitted changes, commit them now:
    ```
    git commit -S -m "Sync spec and beads state before decomposition"
