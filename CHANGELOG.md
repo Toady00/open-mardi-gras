@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 - 2026-03-17
+
+### Fixed
+- Updated the setup CLI to copy the full packaged `opencode/` tree into `.opencode/`, so newly shipped workflow files like `omg-ensure-work-finished` are installed automatically.
+
+### Added
+- Added a setup CLI test covering recursive workflow file discovery.
+- Added `mise.toml` to pin the Bun version used for local development.
+
+### Changed
+- Clarified the README so the setup command documents that it installs the packaged contents of `opencode/`.
+
 ## 0.3.0 - 2026-03-05
 
 ### Changed
@@ -31,5 +43,3 @@ Initial release of open-mardi-gras.
 - HelloWorldPlugin for validation
 - ESLint configuration with TypeScript support
 - NPM package configuration for ESM-only distribution
-
-See the full git history for detailed changes.
