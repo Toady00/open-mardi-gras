@@ -132,7 +132,7 @@ Run the setup command to install workflow files (commands, agents, skills, promp
 npx @toady00/open-mardi-gras setup
 ```
 
-This copies files into your `.opencode/` directory and writes a `.workflow.yaml` config file. Run it again after upgrading to pick up new versions of the workflow files.
+This copies the packaged contents of `opencode/` into your `.opencode/` directory and writes a `.workflow.yaml` config file. Run it again after upgrading to pick up new versions of the workflow files.
 
 ### Plugin Installation
 

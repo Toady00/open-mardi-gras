@@ -18,6 +18,10 @@
         "eslint": "^9.0.0",
         "typescript": "^5.0.0",
       },
+      "peerDependencies": {
+        "@opencode-ai/plugin": ">=1.0.0",
+        "@opencode-ai/sdk": ">=1.0.0",
+      },
     },
   },
   "packages": {

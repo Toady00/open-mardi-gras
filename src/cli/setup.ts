@@ -1,37 +1,44 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-/** All files to copy from the package's opencode/ tree, relative to that root. */
-const FILES_TO_COPY = [
-  "commands/omg-work.md",
-  "commands/omg-spec.md",
-  "commands/omg-spec-track.md",
-  "commands/omg-spec-refine.md",
-  "commands/omg-decompose.md",
-  "commands/omg-status.md",
-  "commands/omg-cleanup.md",
-  "agents/omg-build.md",
-  "agents/omg-spec-writer.md",
-  "agents/omg-reviewer.md",
-  "agents/omg-decomposer.md",
-  "skills/omg-commands/SKILL.md",
-  "skills/omg-epics/SKILL.md",
-  "prompts/omg-workflow.md",
-]
+function collectRelativeFiles(root: string, currentDir = root): string[] {
+  const entries = readdirSync(currentDir, { withFileTypes: true })
+  const files: string[] = []
 
-function setup(): void {
+  for (const entry of entries) {
+    const fullPath = join(currentDir, entry.name)
+
+    if (entry.isDirectory()) {
+      files.push(...collectRelativeFiles(root, fullPath))
+      continue
+    }
+
+    if (entry.isFile()) {
+      files.push(fullPath.slice(root.length + 1))
+    }
+  }
+
+  return files.sort()
+}
+
+export function getWorkflowFiles(sourceRoot = resolve(__dirname, "../../opencode")): string[] {
+  return collectRelativeFiles(sourceRoot)
+}
+
+export function setup(): void {
   const sourceRoot = resolve(__dirname, "../../opencode")
   const destRoot = resolve(process.cwd(), ".opencode")
+  const filesToCopy = getWorkflowFiles(sourceRoot)
 
   console.log("Setting up Open Mardi Gras workflow files...\n")
 
   let copied = 0
   const errors: string[] = []
-  for (const file of FILES_TO_COPY) {
+  for (const file of filesToCopy) {
     const src = join(sourceRoot, file)
     const dest = join(destRoot, file)
 
@@ -91,4 +98,6 @@ function main(): void {
   }
 }
 
-main()
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === __filename) {
+  main()
+}
