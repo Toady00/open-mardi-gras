@@ -152,6 +152,26 @@ Add the package name to the `plugin` array in your `opencode.json` config file. 
 
 OpenCode automatically installs npm plugins at startup.
 
+You can also pin a specific version directly in the plugin entry:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@toady00/open-mardi-gras@0.3.0"]
+}
+```
+
+- `@toady00/open-mardi-gras@0.3.0` - exact pin, best cache behavior
+- `@toady00/open-mardi-gras` - always track latest
+- Semver ranges like `@toady00/open-mardi-gras@^0.3.0` work, but may reinstall on every startup due to OpenCode's current cache behavior
+
+#### Upgrading
+
+- If you use `@toady00/open-mardi-gras` (no pin), OpenCode checks npm for updates at startup
+- If you pin an exact version, update the version string in `opencode.json`
+- If OpenCode appears stuck on an old version, remove `~/.cache/opencode/node_modules/@toady00/open-mardi-gras`
+- After upgrading, rerun `npx @toady00/open-mardi-gras setup` to refresh workflow files in `.opencode/`
+
 #### From local files
 
 Alternatively, create wrapper files in your plugin directory:
