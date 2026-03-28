@@ -6,6 +6,12 @@ then: /omg-ensure-work-finished
 
 Work through the ready queue for epic `$1`.
 
+If `$1` is empty:
+
+1. Run `bd list --type epic --status open --json` to get open epics.
+2. Ask the user which epic to work on.
+3. After they confirm, use that epic ID as `$1` for the rest of this workflow.
+
 Before starting, load the `omg-commands` skill. If you need to manage
 epic-level operations or dependencies, also load the `omg-epics` skill.
 
