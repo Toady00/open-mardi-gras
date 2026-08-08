@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.3.0 - 2026-08-08
+
+### Added
+
+- Record installed instruments in `.opencode/.omg-manifest.json` so setup can distinguish managed files from user-authored files.
+- Add `setup --force` to explicitly replace locally modified instruments and remove modified retired files.
+
+### Changed
+
+- Preserve and report locally modified instruments instead of overwriting them during setup.
+- Document the requirement-scoping pass and handoff document used when work moves between repositories.
+
+### Fixed
+
+- Remove instruments that a previous release installed but the current release no longer ships, without deleting user-authored or locally modified files.
+
 ## 1.2.0 - 2026-08-06
 
 ### Added
