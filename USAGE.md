@@ -37,7 +37,7 @@ Restart opencode if onboarding changes configuration that is loaded at startup.
 
 Use `omg-product-manager` and `omg-architect` to develop the durable documents that explain what should be built and why.
 
-- `omg-product-manager` produces and refines PRDs, roadmaps, user stories, and specs. It owns the product problem, user value, scope, and success criteria.
+- `omg-product-manager` produces and refines PRDs, roadmaps, user stories, specs, and handoffs. It owns the product problem, user value, scope, and success criteria.
 - `omg-architect` produces and reviews design documents and ADRs. It owns buildability, system constraints, tradeoffs, risks, and architectural decisions.
 
 You can work with either agent directly for broader document development. When the initiative is understood well enough to become a buildable specification, start the command flow:
@@ -57,7 +57,11 @@ For a feature owned by a particular code repository, run this flow in that repos
 /omg-spec-harden <spec-path>
 ```
 
-The hardening command folds settled architectural decisions into the spec and resolves gaps, contradictions, edge cases, missing acceptance criteria, and open questions. Repeat it as needed. The result should be an implementation contract that a coding agent can follow without having to guess.
+The hardening command folds settled architectural decisions into the spec and resolves gaps, contradictions, edge cases, missing acceptance criteria, and open questions.
+
+It also holds the spec to the bound OMG works within: an epic is done when the repository contains everything the feature needs and the repository's own verification surface is green. A requirement that can only be verified against a running system — a load test, a chaos exercise, an alarm drill — is outside that bound, and hardening will stop and settle each one with you rather than passing it to a builder who cannot do it. Such a requirement either leaves outright or relocates to a named destination, recorded in the spec's Relocated Requirements section: another system's spec, a backlog item, or a handoff document that the product manager authors on request. Expect to be asked; the command will not invent a destination on its own.
+
+Repeat it as needed. The result should be an implementation contract that a coding agent can follow without having to guess.
 
 ## 5. Plan and build
 
@@ -85,6 +89,6 @@ The foreman dispatches the planned work to the appropriate builder, tester, prod
 | `/omg-hindsight-setup` | Establish the bank architecture or author `hindsight.md` against an existing bank |
 | `/omg-spec <idea>` | Have the product manager clarify the problem and write a spec |
 | `/omg-spec-review <spec>` | Have the architect review buildability and record warranted ADRs |
-| `/omg-spec-harden <spec>` | Finish the spec as a complete implementation contract |
+| `/omg-spec-harden <spec>` | Scope the spec to what the repository owns and finish it as a complete implementation contract |
 | `/omg-decompose <spec>` | Create and validate the epic's implementation and verification plan |
 | `/omg-build <epic>` | Orchestrate implementation, testing, review, and the build report |

@@ -109,6 +109,9 @@ Use `memory_type:roadmap` for sequencing and planning documents.
 
 Use `memory_type:user-story` for individual user stories or acceptance slices.
 
+Use `memory_type:handoff` for handoff records: obligations that must happen but
+are not this repository's to discharge, and who owns each.
+
 Use `memory_type:strategy` for mission, vision, principles, business strategy,
 or other durable direction-setting documents.
 
