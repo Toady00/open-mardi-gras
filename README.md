@@ -180,6 +180,9 @@ You can also pin a specific version directly in the plugin entry:
 - If you pin an exact version, update the version string in `opencode.json`
 - If OpenCode appears stuck on an old version, remove `~/.cache/opencode/node_modules/@toady00/open-mardi-gras`
 - After upgrading, rerun `npx @toady00/open-mardi-gras setup` to refresh workflow files in `.opencode/`
+- Setup records what it installed in `.opencode/.omg-manifest.json` and removes instruments a later release retires. Commit that file — it is what lets setup tell its own files from yours
+- A file you edited is never replaced or deleted; setup keeps it and reports it, loudly when a newer version was withheld. Rerun with `--force` to take the shipped versions and discard local changes
+- The first run after upgrading to a release that records a manifest has nothing to compare against, so it replaces existing instrument files once. Reconcile anything you customized before that run
 
 #### From local files
 

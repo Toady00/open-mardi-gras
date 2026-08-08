@@ -13,11 +13,24 @@ npx @toady00/open-mardi-gras setup
 The setup command:
 
 - Copies every shipped agent, command, and skill from `opencode/` into the target repository's `.opencode/` directory.
+- Records what it installed in `.opencode/.omg-manifest.json`, so a later run can tell its own files from yours.
+- Removes instruments that an earlier release installed and this one no longer ships, including files left behind by a rename.
+- Keeps any file you edited rather than replacing or deleting it, and reports it — loudly when a newer version was withheld.
 - Creates or updates `.opencode/opencode.json` and adds `@toady00/open-mardi-gras` to its `plugin` array.
 - Preserves the other settings and plugin entries already in that config.
 - Avoids adding a duplicate when the plugin is already configured, including when it is version-pinned.
 
 Run setup again after upgrading to refresh the installed instruments. Restart opencode after setup so it loads the plugin and the new instruments.
+
+Commit `.opencode/.omg-manifest.json` — it is what distinguishes the files setup installed from the ones you wrote, and without it setup cannot safely remove anything.
+
+Setup never discards your changes on its own. When it reports files it kept, review them and rerun with `--force` to take the shipped versions instead:
+
+```bash
+npx @toady00/open-mardi-gras setup --force
+```
+
+One exception, unavoidable: the first run after upgrading to a release that records a manifest has no record to compare against, so it replaces existing instrument files once. Reconcile anything you customized before that run.
 
 ## 2. Onboard the repository
 
