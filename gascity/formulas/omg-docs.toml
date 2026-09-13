@@ -1,0 +1,10 @@
+formula = "omg-docs"
+description = "Generate initial documents once, then enter the same refinement used for later edits."
+extends = ["omg-refine"]
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars.initial]
+default = "true"
+enum = ["true"]

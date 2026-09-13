@@ -1,0 +1,112 @@
+formula = "omg-refine"
+description = "Whole-set refinement with successive writers and distinct product and technical cross-review."
+
+[requires]
+formula_compiler = ">=2.0.0"
+
+[vars.initiative]
+required = true
+[vars.operation]
+required = true
+[vars.omg_binding]
+default = "omg"
+[vars.initial]
+default = "false"
+enum = ["true", "false"]
+
+[[steps]]
+id = "prepare"
+title = "Read approved direction and initiative state"
+metadata = { "gc.run_target" = "{{omg_binding}}.product-manager", "gc.scope_ref" = "documents", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-docs/prepare.md"
+
+[[steps]]
+id = "prd"
+title = "Generate initial PRD"
+condition = "{{initial}} == true"
+needs = ["prepare"]
+metadata = { "gc.run_target" = "{{omg_binding}}.product-manager", "gc.scope_ref" = "documents", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-docs/prd.md"
+
+[[steps]]
+id = "design"
+title = "Generate initial HLD and necessary ADRs"
+condition = "{{initial}} == true"
+needs = ["prd"]
+metadata = { "gc.run_target" = "{{omg_binding}}.architect", "gc.scope_ref" = "documents", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-docs/design.md"
+
+[[steps]]
+id = "spec-product"
+title = "Write spec requirements and acceptance criteria"
+condition = "{{initial}} == true"
+needs = ["design"]
+metadata = { "gc.run_target" = "{{omg_binding}}.product-manager", "gc.scope_ref" = "documents", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-docs/spec-product.md"
+
+[[steps]]
+id = "spec-technical"
+title = "Complete buildable specs"
+condition = "{{initial}} == true"
+needs = ["spec-product"]
+metadata = { "gc.run_target" = "{{omg_binding}}.architect", "gc.scope_ref" = "documents", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-docs/spec-technical.md"
+
+[[steps]]
+id = "refinement"
+title = "Refine and cross-review the complete document set"
+needs = ["prepare", "spec-technical"]
+metadata = { "omg.initiative" = "{{initiative}}", "omg.binding" = "{{omg_binding}}", "gc.scope_ref" = "documents", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+[steps.check]
+max_attempts = 3
+[steps.check.check]
+mode = "exec"
+path = ".gc/scripts/checks/omg-refinement.sh"
+timeout = "2m"
+
+[[steps.children]]
+id = "assess-product"
+title = "Assess whole-set impact and revise product intent"
+metadata = { "gc.run_target" = "{{omg_binding}}.product-manager" }
+description_file = "../assets/workflows/omg-docs/assess.md"
+
+[[steps.children]]
+id = "revise-technical"
+title = "Assess technical impact, revise affected docs, and snapshot"
+needs = ["assess-product"]
+metadata = { "gc.run_target" = "{{omg_binding}}.architect" }
+description_file = "../assets/workflows/omg-docs/revise.md"
+
+[[steps.children]]
+id = "review-product"
+title = "Cross-review the whole set with the product lens"
+needs = ["revise-technical"]
+metadata = { "gc.run_target" = "{{omg_binding}}.product-manager" }
+description_file = "../assets/workflows/omg-docs/review-product.md"
+
+[[steps.children]]
+id = "review-technical"
+title = "Cross-review the whole set with the technical lens"
+needs = ["review-product"]
+metadata = { "gc.run_target" = "{{omg_binding}}.architect" }
+description_file = "../assets/workflows/omg-docs/review-technical.md"
+
+[[steps]]
+id = "queue"
+title = "Record approval readiness or return the decision to the human"
+needs = ["refinement"]
+metadata = { "gc.run_target" = "{{omg_binding}}.product-manager", "gc.scope_ref" = "documents", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-docs/queue.md"
+
+[[steps]]
+id = "documents"
+title = "Document authoring scope"
+needs = ["queue"]
+metadata = { "gc.kind" = "scope", "gc.scope_name" = "documents", "gc.scope_role" = "body" }
+
+[[steps]]
+id = "handoff"
+title = "Persist the document workflow outcome and notify the conversation"
+needs = ["documents"]
+metadata = { "gc.kind" = "cleanup", "gc.scope_ref" = "documents", "gc.scope_role" = "teardown", "gc.run_target" = "{{omg_binding}}.product-manager" }
+description_file = "../assets/workflows/omg-docs/handoff.md"

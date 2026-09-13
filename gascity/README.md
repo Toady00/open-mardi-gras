@@ -19,14 +19,20 @@ The schema-2 [pack manifest](pack.toml) declares `omg`, version `0.1.0`.
 | [Product manager](agents/product-manager/prompt.template.md) | Product requirements, scope, decisions, and reviews. Writes documents, not implementation code. |
 | [Architect](agents/architect/prompt.template.md) | System designs, architectural decisions, and reviews. Writes documents, not implementation code. |
 
-Both agents began as copies of the original OMG personas. They use tmux sessions
-and omit `scope`, allowing city and rig instances. Their presence does not mean
-the original OMG planning, build, and review workflow has been ported.
+Both agents use tmux sessions and omit `scope`, allowing city and rig instances.
+They share the [initiative workflow](skills/omg-initiative/SKILL.md), pinned
+[Archify](skills/archify/SKILL.md), and the Hindsight read fragment.
 
-The pack includes the vendored [Archify skill](skills/archify/SKILL.md). It does
-not yet contain its own Gas City commands, orders, or formulas. Hindsight
-dependency wiring is still planned, not configured in `pack.toml` today.
-Nothing here installs the sibling OpenCode product.
+| Resource | Purpose |
+| --- | --- |
+| `gc omg initiative` | Revision records, conversation-facing approval state, and explicit workflow initiation |
+| `omg-docs` | Initial PRD, HLD, necessary ADRs and specs, followed by shared refinement |
+| `omg-refine` | Whole-set assessment, successive revision and distinct product/technical cross-review |
+| `omg-build` | Official native planning/build/review continuation, spec reconciliation and post-settlement reporting |
+
+Approval does not launch a build. After approving specs, the human separately
+requests initiation through the agent. See the [implementation decisions](docs/implementation-decisions.md)
+for the clarification to the original [visual proposal](docs/archify/README.md).
 
 ## Importing the pack
 
@@ -42,11 +48,67 @@ in `gascity`, not at the parent repository root. A city-level import supports
 city instances and expands eligible agents across configured rigs; an explicit
 rig import with the same binding takes precedence for that rig.
 
+Run `gc import install` after configuration. The manifest pins the official
+Gas City methodology pack and Hindsight pack at the inspected commits. Keep the
+city import so pack commands and the Hindsight archivist are available. Build
+rigs also need the official role agents, as in the official pack's installation:
+
+```toml
+[[rigs]]
+name = "app"
+path = "/absolute/path/to/app"
+
+[rigs.imports.gc]
+source = "https://github.com/gastownhall/gascity-packs.git//gascity/roles"
+version = "sha:b43abe633283a7769346d32360ff747d561fa0a4"
+```
+
+Native build routes use `gc.*`; the Hindsight read fragment uses the `hindsight`
+binding. Keep those dependency bindings. OMG's own binding can change; pass
+`--binding <name>` when launching through the initiative command so its formula
+targets match. City-initiated documents stay in city `docs/initiatives/<id>`;
+rig-initiated documents use that rig's same relative directory. The city must be
+a Git repository to own published initiative documents. Select a target rig
+explicitly for a city initiative's build. Starting one rig does not start others.
+
+Runtime prerequisites are Gas City's formula compiler v2, scope teardown and
+`gc beads metadata-cas`, a working shared Beads store, Git, Python 3, Mike Farah's
+`yq`, and Node.js for Archify. Configure the provider and Hindsight bank in the
+consuming city. This pack does not start a custom controller or retainer.
+
+## Working through conversation
+
+Ask either role to explore an initiative. The agent records a living discussion
+summary while iterating visuals, then records your approval of the exact IR and
+rendered revision. Document generation always enters shared refinement. When it
+finishes, the agent leaves an idle durable record for later review.
+
+In another session, ask "What's waiting for my review?" The agent lists those
+records and presents the relevant documents. Discuss changes or approve selected
+specs. The agent publishes accepted statuses separately. Say "Start the build for
+this initiative in app" when you want implementation to begin.
+
+Commands are supporting tools for agents, not a required human interface. See
+[command help](commands/initiative/help.md) for the exact operations and recovery.
+Records use native atomic metadata updates in the city work store. Launch intent
+is persisted before external dispatch. Repeated build requests for the same rig
+and approved snapshot return its receipt. Lost acknowledgements require inspecting
+the native workflow and binding its existing root, not blindly repeating dispatch.
+
+An authoring workflow gets three automatic refinement attempts. An unresolved
+required finding or decision then returns to conversation. This bounds unattended
+cost without weakening requirements. A later resolved decision can start another
+refinement run. Human wait time consumes no authoring agent.
+
+Build reporting runs as native post-settlement work, including on failure. Its
+completion is separate from the build root's terminal status. Reports distinguish
+implemented, reviewed and actually published code against the pinned spec revision.
+
 ## Hindsight
 
-OMG is intended to depend on the separate `hindsight` Gas City pack, also
-maintained by Brandon Dennis. Its current development checkout is
-`~/code/stacked-chips-v2/hindsight`.
+OMG depends on the separate `hindsight` Gas City pack. PM and architect opt into
+its shared read fragment with `HINDSIGHT_MEMORY=1`. The consuming city supplies
+`HINDSIGHT_BANK` and the API/profile configuration; the pack assumes no bank.
 
 Hindsight owns the document-memory integration:
 
@@ -55,16 +117,41 @@ Hindsight owns the document-memory integration:
 - The surveyor produces a repository's `docs/current-state.md`, including
   periodic surveys when configured.
 
-OMG should produce product and architecture documents and use these services,
-not duplicate them. The Hindsight pack's README and operations documentation
+OMG produces product and architecture documents and uses these services.
+The Hindsight pack's README and operations documentation
 define bank configuration, document schemas, publishing, and survey setup.
 Document shipping reconciles the canonical Git branch; writing a local Markdown
 file alone does not publish it to memory.
 
-For now, configure Hindsight separately in the consuming city. The intended
-pack dependency is a transitive `[imports.hindsight]` import once its portable
-source and version policy are chosen. The development checkout path above is
-not a distributable dependency declaration.
+Authored Markdown uses Hindsight schema 2 and stable document IDs. Drafts and
+accepted revisions ship repeatedly through the existing pipeline. IR, HTML,
+comparison evidence and receipts are excluded, including indirect attachments.
+Raw review and execution artifacts live under `.omg/`, outside the scanned docs
+tree. Accepted documents express approved direction; reports provide implementation
+evidence at a stated code revision. Ingestion never approves or launches a build.
+
+## Verification
+
+Use the standard-library tests, with no extra test framework:
+
+```sh
+python3 -m unittest discover -s test -p 'test_*.py' -v
+```
+
+Set `GC_BASE_PACK` and `HINDSIGHT_PACK` to local checkout pack roots to also compile
+the formulas using the installed `gc` binary. Tests use temporary Git repositories
+and substitute local dependency paths in a temporary pack manifest. They do not
+start agents, publish documents, or write to a real memory bank.
+
+The initial verification covers Git revision/readiness checks, separate approval
+and launch, ambiguous dispatch recovery behavior, and native formula compilation.
+A live managed-city rehearsal is still required to establish end-to-end provider,
+controller, publication and Hindsight behavior in a consuming installation.
+
+The build formula extends `build-from-plan-base`. Gas City replaces whole steps
+on override, so scoped steps explicitly preserve the pinned native dependencies,
+routes, checks and drains. Their descriptions resolve from the dependency's asset
+layers. Review these overrides when updating the official pack pin.
 
 ## Archify
 

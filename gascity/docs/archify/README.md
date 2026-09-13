@@ -1,7 +1,10 @@
 # Proposed OMG process
 
-These charts are working proposals for discussion, not documentation of an
-implemented workflow. They were generated with this pack's pinned Archify skill.
+These charts began as working proposals for discussion and now include the
+owner's implementation-session clarification: spec approval does not launch a
+build. The human explicitly requests initiation through an agent. The pack's
+[README](../../README.md) describes implementation and verification status.
+The charts were generated with this pack's pinned Archify skill.
 Open the HTML files locally; each is self-contained. The adjacent JSON files
 are their editable sources.
 
@@ -231,8 +234,9 @@ refinement passes for the exact revision. An unresolved decision instead returns
 to the human, not a false approval-ready result. The human may later batch selected
 revisions across different sessions and initiatives, without keeping agents busy.
 Acceptance updates the selected documents to
-`status: accepted`, republishes them, and releases the corresponding build
-workflows. A draft's arrival in Hindsight does not authorize a build.
+`status: accepted` and republishes them. The human separately requests initiation
+of the corresponding build workflows through an agent. Approval and Hindsight
+ingestion do not launch a build.
 
 Publication means eligible Markdown reaches the configured remote canonical Git
 ref, not merely a local commit. The existing Hindsight pack handles shipping and
@@ -261,9 +265,9 @@ evidence. Every deviation needs a reason and its decision authority; describing
 an unapproved deviation does not retroactively approve it.
 
 The official build chain already summarizes implementation, reviews and repairs,
-finalizes, and publishes. An OMG extension can add spec reconciliation before
-finalization and require its output in the final report. Reuse of
-`build-from-plan-base` is a candidate, not a chosen inheritance contract yet.
+finalizes, and publishes. `omg-build` now extends `build-from-plan-base`, adds spec
+reconciliation before finalization, and requires it in the native final report.
+Post-settlement reporting also covers failures before normal finalization.
 
 The normal path in the workflow chart shows reconciliation before finalization
 and report publication. Partial, blocked, and failed outcomes also need a report.
@@ -271,20 +275,27 @@ The implementation must provide that path even when normal finalization cannot
 complete. A report must distinguish implemented, reviewed, and actually published
 code; it must not imply post-merge verification that never happened.
 
-## Still to settle through review
+## Implementation choices
 
-- The review interface for exact candidate IR revisions and finished specs; their
-  separate approval obligations are settled here.
-- Presentation details for the agreed separate before/after renders and change
-  summary fallback where native Archify comparison is unavailable.
-- Whether a substantive review during exploration should always use a work bead,
-  or whether some exploratory reviews can remain mail exchanges.
-- Where initiative documents live and how humans browse the approval queue.
-- Whether session isolation adds enough review value to justify its cost; no
-  isolation guarantee or default third reviewer is proposed.
-- How selected revision approvals release workflows without duplicate launches.
-- Which native build continuation accepts the specs, who authors the report,
-  and how reporting runs for unsuccessful builds.
+- Conversation is the human review interface; pinned city-work-store Beads records
+  retain exact revisions across sessions. Pack commands support agent operations.
+- Initiative documents live in the initiating rig or city's
+  `docs/initiatives/<id>`. Existing Hindsight scans those canonical Git docs trees.
+- Lightweight clarification uses mail; substantive delegated review uses a work
+  bead and durable result artifact. Internal steps route through native formulas.
+- Initial generation and later changes use one native checked refinement scope,
+  with three automatic attempts before an unresolved decision returns to the human.
+- Separate-session isolation remains optional. Both roles receive distinct
+  whole-set review assignments; no third persona is introduced.
+- Spec approval does not launch implementation. A separate explicit human request
+  records launch intent before native dispatch. Repeated starts reuse the saved
+  operation; ambiguous acknowledgement requires native-state inspection/recovery.
+- `omg-build` bridges pinned specs to native requirements and implementation
+  planning. The architect authors the post-settlement report for every outcome.
+- Non-architecture comparison still uses before/after renders and authored change
+  rationale. Known renderer defects remain as documented in the historical summary.
+
+See the pack README for verification coverage and the live-city rehearsal boundary.
 
 ## Evidence behind the proposal
 
@@ -317,5 +328,6 @@ diagram type and `--quality showcase --json`, then `deliver` to the adjacent
 HTML with those same options. Run `visual-check` on an exact temporary HTML copy
 to keep screenshots and receipts outside this documentation directory.
 
-These documents capture the proposed process and its discussion handoff. They do
-not implement the workflow or change its configuration.
+These documents capture the process and its discussion handoff. The pack now
+implements the workflow with native formulas and conversational initiative
+records; see the pack README for setup, commands and verification limits.

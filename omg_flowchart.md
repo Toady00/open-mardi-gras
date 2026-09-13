@@ -1,12 +1,66 @@
 # The OMG Workflow — Flowcharts
 
-A descriptive map of what the instruments in `opencode/` actually do, drawn from
-their current text.
+A descriptive map of the instruments in `opencode/` and the Gas City pack in
+`gascity/`, drawn from their current text. The Gas City workflow below is separate
+from the older OpenCode workflow in the numbered sections.
 
 **This document is derived, not authoritative.** The instruments are the source of
 truth. If a diagram and an instrument disagree, the instrument is right and this
 file is stale. It is a reading aid and a review surface — not a spec, and nothing
 should be built from it.
+
+## Gas City initiative workflow
+
+Conversation is the human interface. Initiative records use native Beads metadata
+CAS and survive agent sessions. Rig-initiated documents live in that rig's
+`docs/initiatives/<id>`; city-initiated documents use the city's same directory.
+Approval and build initiation are separate human decisions.
+
+```mermaid
+flowchart TD
+    TALK["Human discusses initiative with PM or architect<br/>JSON IR, generated HTML, living Markdown summary"]
+    IR{{"Human approves exact rendered IR revision"}}
+    INITIAL["omg-docs: generate once<br/>PRD, HLD, necessary ADRs, successive specs"]
+    EDIT["Later substantive edit<br/>invalidate readiness"]
+    REFINE["omg-refine: one shared process<br/>Whole-set assessment and affected revisions<br/>Distinct PM and architect cross-review inside refinement"]
+    NEED{{"Unresolved decision, candidate IR,<br/>or required findings after bounded attempts"}}
+    QUEUE["Persistent approval-ready record<br/>Exact revision; authoring session can finish"]
+    SPECS{{"Human approves selected specs through conversation"}}
+    ACCEPTED["Accepted record and status publication<br/>No build launch"]
+    START{{"Human explicitly requests a build in a selected rig"}}
+    INTENT["Persist launch intent before native dispatch<br/>Repeated request returns receipt;<br/>ambiguous acknowledgement requires recovery"]
+    NATIVE["omg-build extends native build-from-plan-base<br/>Pinned specs to native requirements adapter<br/>Plan, decompose, implement, review and repair"]
+    RECON["Reconcile every requirement against pinned specs<br/>Implementation and verification evidence; deviations and authority"]
+    FINAL["Native finalization and optional code publication"]
+    REPORT["Post-settlement architect report<br/>Success, partial, blocked and failed builds<br/>Assessed SHA; implemented vs reviewed vs published"]
+    SHIP["Canonical remote Markdown revisions<br/>Existing Hindsight pipeline and receipts"]
+    TALK --> IR --> INITIAL --> REFINE
+    EDIT --> REFINE
+    REFINE -->|"needs human"| NEED
+    NEED -->|"decision; reconcile against approved baseline"| REFINE
+    REFINE -->|"both lenses pass exact revision"| QUEUE
+    QUEUE --> SPECS --> ACCEPTED
+    SPECS -->|"changes"| EDIT
+    ACCEPTED -.->|"later, separate request"| START
+    START --> INTENT --> NATIVE --> RECON --> FINAL --> REPORT
+    NATIVE -->|"failure or blocked"| REPORT
+    RECON -->|"required violation"| REPORT
+    FINAL -->|"failure"| REPORT
+    TALK -.->|"authored summary"| SHIP
+    REFINE -.->|"drafts can publish repeatedly"| SHIP
+    ACCEPTED -.-> SHIP
+    REPORT --> SHIP
+```
+
+Native formula checks repeat the complete refinement assignment, including both
+reviews, up to three automatic attempts. Exhaustion returns the unresolved issue
+to the human, not a false pass. Native scope teardown preserves reporting after
+build failure and after the root settles. A terminal build root therefore does
+not prove that its reporting assignment finished.
+
+Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
+raw reviews, chat, mail and bead chatter are excluded, including attachments.
+Neither publication nor ingestion approves direction or starts implementation.
 
 ## Conventions used in every diagram
 

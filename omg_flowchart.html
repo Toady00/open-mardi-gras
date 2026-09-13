@@ -255,6 +255,7 @@ figure.diagram {
     <summary>Contents</summary>
     <nav aria-label="Table of contents">
       <ol>
+        <li><a href="#gas-city-initiative-workflow">Gas City initiative workflow</a></li>
         <li><a href="#conventions-used-in-every-diagram">Conventions used in every diagram</a></li>
         <li><a href="#1-the-lifecycle-end-to-end">1. The lifecycle, end to end</a></li>
         <li><a href="#2-plan-phase-omg-decompose">2. Plan phase — <code>/omg-decompose</code></a></li>
@@ -278,12 +279,59 @@ figure.diagram {
 <h1 id="the-omg-workflow-flowcharts">The OMG Workflow — Flowcharts</h1>
 <p class="derived">A derived, read-only view of <code>omg_flowchart.md</code>, rendered with its diagrams inline. The Markdown file is the source of truth.</p>
 </header>
-<p>A descriptive map of what the instruments in <code>opencode/</code> actually do, drawn from
-their current text.</p>
+<p>A descriptive map of the instruments in <code>opencode/</code> and the Gas City pack in
+<code>gascity/</code>, drawn from their current text. The Gas City workflow below is separate
+from the older OpenCode workflow in the numbered sections.</p>
 <p><strong>This document is derived, not authoritative.</strong> The instruments are the source of
 truth. If a diagram and an instrument disagree, the instrument is right and this
 file is stale. It is a reading aid and a review surface — not a spec, and nothing
 should be built from it.</p>
+<h2 id="gas-city-initiative-workflow">Gas City initiative workflow</h2>
+<p>Conversation is the human interface. Initiative records use native Beads metadata
+CAS and survive agent sessions. Rig-initiated documents live in that rig&#39;s
+<code>docs/initiatives/&lt;id&gt;</code>; city-initiated documents use the city&#39;s same directory.
+Approval and build initiation are separate human decisions.</p>
+<figure class="diagram" role="group" aria-label="Diagram 1"><pre class="mermaid-src" data-index="0" hidden>flowchart TD
+    TALK["Human discusses initiative with PM or architect&lt;br/&gt;JSON IR, generated HTML, living Markdown summary"]
+    IR{{"Human approves exact rendered IR revision"}}
+    INITIAL["omg-docs: generate once&lt;br/&gt;PRD, HLD, necessary ADRs, successive specs"]
+    EDIT["Later substantive edit&lt;br/&gt;invalidate readiness"]
+    REFINE["omg-refine: one shared process&lt;br/&gt;Whole-set assessment and affected revisions&lt;br/&gt;Distinct PM and architect cross-review inside refinement"]
+    NEED{{"Unresolved decision, candidate IR,&lt;br/&gt;or required findings after bounded attempts"}}
+    QUEUE["Persistent approval-ready record&lt;br/&gt;Exact revision; authoring session can finish"]
+    SPECS{{"Human approves selected specs through conversation"}}
+    ACCEPTED["Accepted record and status publication&lt;br/&gt;No build launch"]
+    START{{"Human explicitly requests a build in a selected rig"}}
+    INTENT["Persist launch intent before native dispatch&lt;br/&gt;Repeated request returns receipt;&lt;br/&gt;ambiguous acknowledgement requires recovery"]
+    NATIVE["omg-build extends native build-from-plan-base&lt;br/&gt;Pinned specs to native requirements adapter&lt;br/&gt;Plan, decompose, implement, review and repair"]
+    RECON["Reconcile every requirement against pinned specs&lt;br/&gt;Implementation and verification evidence; deviations and authority"]
+    FINAL["Native finalization and optional code publication"]
+    REPORT["Post-settlement architect report&lt;br/&gt;Success, partial, blocked and failed builds&lt;br/&gt;Assessed SHA; implemented vs reviewed vs published"]
+    SHIP["Canonical remote Markdown revisions&lt;br/&gt;Existing Hindsight pipeline and receipts"]
+    TALK --&gt; IR --&gt; INITIAL --&gt; REFINE
+    EDIT --&gt; REFINE
+    REFINE --&gt;|"needs human"| NEED
+    NEED --&gt;|"decision; reconcile against approved baseline"| REFINE
+    REFINE --&gt;|"both lenses pass exact revision"| QUEUE
+    QUEUE --&gt; SPECS --&gt; ACCEPTED
+    SPECS --&gt;|"changes"| EDIT
+    ACCEPTED -.-&gt;|"later, separate request"| START
+    START --&gt; INTENT --&gt; NATIVE --&gt; RECON --&gt; FINAL --&gt; REPORT
+    NATIVE --&gt;|"failure or blocked"| REPORT
+    RECON --&gt;|"required violation"| REPORT
+    FINAL --&gt;|"failure"| REPORT
+    TALK -.-&gt;|"authored summary"| SHIP
+    REFINE -.-&gt;|"drafts can publish repeatedly"| SHIP
+    ACCEPTED -.-&gt; SHIP
+    REPORT --&gt; SHIP</pre><div class="mermaid-out" id="mermaid-out-0"></div></figure>
+<p>Native formula checks repeat the complete refinement assignment, including both
+reviews, up to three automatic attempts. Exhaustion returns the unresolved issue
+to the human, not a false pass. Native scope teardown preserves reporting after
+build failure and after the root settles. A terminal build root therefore does
+not prove that its reporting assignment finished.</p>
+<p>Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
+raw reviews, chat, mail and bead chatter are excluded, including attachments.
+Neither publication nor ingestion approves direction or starts implementation.</p>
 <h2 id="conventions-used-in-every-diagram">Conventions used in every diagram</h2>
 <table>
 <thead>
@@ -314,7 +362,7 @@ backwards is the single most common wiring error in these instruments.</p>
 <hr>
 <h2 id="1-the-lifecycle-end-to-end">1. The lifecycle, end to end</h2>
 <p>Four largely independent processes. Only the middle two are the epic loop.</p>
-<figure class="diagram" role="group" aria-label="Diagram 1"><pre class="mermaid-src" data-index="0" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 2"><pre class="mermaid-src" data-index="1" hidden>flowchart TD
     subgraph SETUP["Setup — once per repo"]
         ONB["/omg-onboard solo / centralized / satellite&lt;br/&gt;omg-onboarder"]
         HS["/omg-hindsight-setup&lt;br/&gt;omg-hindsight-architect"]
@@ -350,7 +398,7 @@ backwards is the single most common wiring error in these instruments.</p>
     PLAN --&gt; G1
     G1 --&gt; BUILD
     BUILD --&gt; DONE
-    DONE --&gt; G2</pre><div class="mermaid-out" id="mermaid-out-0"></div></figure>
+    DONE --&gt; G2</pre><div class="mermaid-out" id="mermaid-out-1"></div></figure>
 <p>Two things worth noticing here:</p>
 <ul>
 <li><strong>Decomposition is handed a spec, not an epic.</strong> <code>/omg-spec</code> explicitly creates
@@ -361,7 +409,7 @@ frontmatter block. Everything else stays Git-only.</li>
 </ul>
 <hr>
 <h2 id="2-plan-phase-omg-decompose">2. Plan phase — <code>/omg-decompose</code></h2>
-<figure class="diagram" role="group" aria-label="Diagram 2"><pre class="mermaid-src" data-index="1" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 3"><pre class="mermaid-src" data-index="2" hidden>flowchart TD
     A(["/omg-decompose spec-path"]) --&gt; B["decompose-mint.sh&lt;br/&gt;resolve spec, require frontmatter id,&lt;br/&gt;mint or reuse epic, mint ADR beads"]
     B --&gt;|"failure"| BSTOP(["STOP — report to the human,&lt;br/&gt;take no further action"])
     B --&gt;|"ok"| C{"epic had beads&lt;br/&gt;already?"}
@@ -388,7 +436,7 @@ frontmatter block. Everything else stays Git-only.</li>
     M --&gt;|"duplicate titles or missing body"| MSTOP["Fix the named failure and rerun"]
     MSTOP --&gt; M
     M --&gt;|"ok"| N["bd swarm validate epic&lt;br/&gt;bd dep tree --direction up epic"]
-    N --&gt; O{{"HUMAN GATE&lt;br/&gt;show the final structure,&lt;br/&gt;stop for review"}}</pre><div class="mermaid-out" id="mermaid-out-1"></div></figure>
+    N --&gt; O{{"HUMAN GATE&lt;br/&gt;show the final structure,&lt;br/&gt;stop for review"}}</pre><div class="mermaid-out" id="mermaid-out-2"></div></figure>
 <p><strong>The four concerns the decomposer hunts</strong> — note that two of them look for <em>too
 much</em> verification, which is the change this repo shipped in the verification-economy
 work:</p>
@@ -405,7 +453,7 @@ obligation covers, and no recorded no-verification decision explains.</li>
 <p>This is the vocabulary the planner reasons in. It is also where the workflow&#39;s
 sharpest current gap lives, so the diagram traces each outcome all the way to
 whatever actually discharges it.</p>
-<figure class="diagram" role="group" aria-label="Diagram 3"><pre class="mermaid-src" data-index="2" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 4"><pre class="mermaid-src" data-index="3" hidden>flowchart TD
     OBL["A spec obligation&lt;br/&gt;that needs verification"] --&gt; P{"Proportionality:&lt;br/&gt;cost to build, run, and maintain&lt;br/&gt;vs. cost of the failure it catches"}
 
     P --&gt;|"executable code, and the&lt;br/&gt;ecosystem has real test tooling"| T["AUTOMATED TEST"]
@@ -424,7 +472,7 @@ whatever actually discharges it.</p>
     RC --&gt; RD(["The reviewer reads changed files,&lt;br/&gt;never the epic's recorded obligations.&lt;br/&gt;NOT ENFORCED"])
 
     NV --&gt; NC["Comment on the epic"]
-    NC --&gt; ND(["Nothing is required.&lt;br/&gt;CORRECT BY DEFINITION"])</pre><div class="mermaid-out" id="mermaid-out-2"></div></figure>
+    NC --&gt; ND(["Nothing is required.&lt;br/&gt;CORRECT BY DEFINITION"])</pre><div class="mermaid-out" id="mermaid-out-3"></div></figure>
 <p>Hard rules bounding the top of this diagram:</p>
 <ul>
 <li>An automated test may be planned <strong>only for executable code</strong>, and <strong>only</strong> with
@@ -440,7 +488,7 @@ outcomes are a live problem rather than a cosmetic one.</p>
 <hr>
 <h2 id="4-canonical-bead-topology">4. Canonical bead topology</h2>
 <p>The shape every epic converges on, before findings perturb it.</p>
-<figure class="diagram" role="group" aria-label="Diagram 4"><pre class="mermaid-src" data-index="3" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 5"><pre class="mermaid-src" data-index="4" hidden>flowchart TD
     EPIC["EPIC — minted from the spec"]
     ADR["ADR beads — one per adr whose&lt;br/&gt;produced_for equals this spec.&lt;br/&gt;relates-to only, CLOSED at mint time.&lt;br/&gt;Not a child. Blocks nothing."]
     TEST["TEST bead&lt;br/&gt;agent=omg-tester"]
@@ -456,7 +504,7 @@ outcomes are a live problem rather than a cosmetic one.</p>
 
     IMPL ==&gt;|"waits on"| TEST
     REVIEW ==&gt;|"waits on"| IMPL
-    REPORT ==&gt;|"waits on"| REVIEW</pre><div class="mermaid-out" id="mermaid-out-3"></div></figure>
+    REPORT ==&gt;|"waits on"| REVIEW</pre><div class="mermaid-out" id="mermaid-out-4"></div></figure>
 <ul>
 <li>Solid double arrows are dependency edges; dotted arrows are parentage or a
 non-blocking <code>relates-to</code> link.</li>
@@ -476,7 +524,7 @@ and the fix loop</em>.</li>
 </ul>
 <hr>
 <h2 id="5-build-phase-the-foreman-s-loop">5. Build phase — the foreman&#39;s loop</h2>
-<figure class="diagram" role="group" aria-label="Diagram 5"><pre class="mermaid-src" data-index="4" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 6"><pre class="mermaid-src" data-index="5" hidden>flowchart TD
     A(["/omg-build epic-id"]) --&gt; B["Read build.mode from .workflow.yaml&lt;br/&gt;default one_agent"]
     B --&gt; C["Orphan scan&lt;br/&gt;bd list --parent epic --status in_progress"]
     C --&gt;|"orphans found"| REC["RECOVERY PATH — see section 6"]
@@ -494,7 +542,7 @@ and the fix loop</em>.</li>
     E --&gt;|"yes"| J{"bd epic close-eligible?"}
     J --&gt;|"yes"| K(["Close the epic"])
     J --&gt;|"no"| L["Any child still in_progress&lt;br/&gt;is crash-stranded"]
-    L --&gt; REC</pre><div class="mermaid-out" id="mermaid-out-4"></div></figure>
+    L --&gt; REC</pre><div class="mermaid-out" id="mermaid-out-5"></div></figure>
 <p><strong>The foreman never trusts a worker&#39;s summary as the record of truth.</strong> After every
 dispatch it re-reads <code>bd ready</code>. The queue owns ordering and blocking; the foreman
 holds no state of its own.</p>
@@ -529,30 +577,30 @@ unrecoverable tool failure. A turn boundary is never such a blocker.</p>
 <h3 id="the-dispatch-lifecycle-contract">The dispatch lifecycle contract</h3>
 <p>Every worker dispatch is <strong>a single turn</strong>, and the bead comes back in exactly one
 of two states:</p>
-<figure class="diagram" role="group" aria-label="Diagram 6"><pre class="mermaid-src" data-index="5" hidden>flowchart LR
+<figure class="diagram" role="group" aria-label="Diagram 7"><pre class="mermaid-src" data-index="6" hidden>flowchart LR
     D["Dispatch"] --&gt; S{"terminal state"}
     S --&gt; A(["CLOSED"])
     S --&gt; B(["REOPENED AND BLOCKED&lt;br/&gt;by a new bead"])
     S -.-&gt;|"contract violation"| C["in_progress"]
-    S -.-&gt;|"contract violation"| E["reopened and UNBLOCKED"]</pre><div class="mermaid-out" id="mermaid-out-5"></div></figure>
+    S -.-&gt;|"contract violation"| E["reopened and UNBLOCKED"]</pre><div class="mermaid-out" id="mermaid-out-6"></div></figure>
 <p>The two violation states are what strand a bead. <code>in_progress</code> looks like live work
 to the foreman and gets recovered as a crash; reopened-unblocked re-enters the ready
 queue immediately and re-dispatches the same unfinished work forever.</p>
 <hr>
 <h2 id="6-recovery-path">6. Recovery path</h2>
-<figure class="diagram" role="group" aria-label="Diagram 7"><pre class="mermaid-src" data-index="6" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 8"><pre class="mermaid-src" data-index="7" hidden>flowchart TD
     A["A child bead left in_progress&lt;br/&gt;by an interrupted run"] --&gt; B{"does it already carry a&lt;br/&gt;RECLAIMED: comment?"}
     B --&gt;|"yes — this is the second failure"| C["bd gate create --type=human --blocks id&lt;br/&gt;reason: twice-failed recovery"]
     C --&gt; D(["HUMAN GATE — stop for this bead.&lt;br/&gt;Never dispatch a third time."])
     B --&gt;|"no"| E["bd comment id RECLAIMED: ..."]
     E --&gt; F["bd update id --status open, clear assignee"]
-    F --&gt; G["Re-dispatch fresh by the existing agent label"]</pre><div class="mermaid-out" id="mermaid-out-6"></div></figure>
+    F --&gt; G["Re-dispatch fresh by the existing agent label"]</pre><div class="mermaid-out" id="mermaid-out-7"></div></figure>
 <p>Recovery adds <strong>no routing logic</strong>. The <code>agent</code> label still decides the handler. A
 worker picking up a bead marked <code>RECLAIMED:</code> first checks whether the work is already
 complete — and if so, just closes it.</p>
 <hr>
 <h2 id="7-the-builder-s-flow">7. The builder&#39;s flow</h2>
-<figure class="diagram" role="group" aria-label="Diagram 8"><pre class="mermaid-src" data-index="7" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 9"><pre class="mermaid-src" data-index="8" hidden>flowchart TD
     A["Foreman dispatches omg-builder"] --&gt; B["bd update id --claim&lt;br/&gt;claim FIRST"]
     B --&gt; C["bd show id — read the full bead"]
     C --&gt; D{"does bead metadata&lt;br/&gt;carry test_beads?"}
@@ -575,13 +623,13 @@ complete — and if so, just closes it.</p>
     P --&gt; Q["MY BEAD waits on ADJUDICATION&lt;br/&gt;reset mine to open"]
     Q --&gt; O
 
-    I -.-&gt;|"FORBIDDEN"| X["Edit the test&lt;br/&gt;or force it green"]</pre><div class="mermaid-out" id="mermaid-out-7"></div></figure>
+    I -.-&gt;|"FORBIDDEN"| X["Edit the test&lt;br/&gt;or force it green"]</pre><div class="mermaid-out" id="mermaid-out-8"></div></figure>
 <p>The two escape hatches are the whole point of this diagram. A builder that cannot
 make a test pass has exactly two legitimate moves — summon the confidence planner, or
 file for PM adjudication — and one forbidden one.</p>
 <hr>
 <h2 id="8-the-tester-s-flow">8. The tester&#39;s flow</h2>
-<figure class="diagram" role="group" aria-label="Diagram 9"><pre class="mermaid-src" data-index="8" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 10"><pre class="mermaid-src" data-index="9" hidden>flowchart TD
     A["Foreman dispatches omg-tester"] --&gt; B{"does the stack have&lt;br/&gt;conventional test tooling?"}
     B --&gt;|"no"| C["STOP. Never invent a methodology,&lt;br/&gt;harness, executor, or assertion framework."]
     C --&gt; ESC["File a bead&lt;br/&gt;agent=omg-test-planner"]
@@ -598,7 +646,7 @@ file for PM adjudication — and one forbidden one.</p>
 
     G --&gt;|"this verification costs more&lt;br/&gt;to build, run, and maintain&lt;br/&gt;than the failure it prevents"| ESC
     ESC --&gt; L["MY BEAD waits on the planner bead&lt;br/&gt;reset mine to open, clear assignee"]
-    L --&gt; M(["REOPENED AND BLOCKED"])</pre><div class="mermaid-out" id="mermaid-out-8"></div></figure>
+    L --&gt; M(["REOPENED AND BLOCKED"])</pre><div class="mermaid-out" id="mermaid-out-9"></div></figure>
 <p>The tester is the <strong>sole test author</strong> in the workflow. Builders write no tests; the
 confidence planner mints them and the foreman dispatches them here.</p>
 <hr>
@@ -606,7 +654,7 @@ confidence planner mints them and the foreman dispatches them here.</p>
 <p>One summons file serves two escalators, and almost every branch resolves differently
 depending on which one it was. That polymorphism is the reason this path is worth its
 own diagram.</p>
-<figure class="diagram" role="group" aria-label="Diagram 10"><pre class="mermaid-src" data-index="9" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 11"><pre class="mermaid-src" data-index="10" hidden>flowchart TD
     S["Summons bead&lt;br/&gt;agent=omg-test-planner"] --&gt; R{"who escalated?"}
     R --&gt;|"BUILDER — a planned test&lt;br/&gt;is wrong or impossible"| RB["The disputed test bead is a&lt;br/&gt;DIFFERENT, already-closed bead.&lt;br/&gt;The waiting bead is the builder's fix."]
     R --&gt;|"TESTER — the verification costs&lt;br/&gt;more than it prevents"| RT["The disputed test bead IS&lt;br/&gt;the escalating bead.&lt;br/&gt;Waiting bead and disputed bead are one."]
@@ -635,7 +683,7 @@ own diagram.</p>
     RGT --&gt; Z
     REB --&gt; Z
     RET --&gt; Z
-    Z --&gt; INV["INVARIANT: never leave a bead open&lt;br/&gt;that nothing will ever close.&lt;br/&gt;The builder path leaves the waiting bead open&lt;br/&gt;only when it now waits on a new bead."]</pre><div class="mermaid-out" id="mermaid-out-9"></div></figure>
+    Z --&gt; INV["INVARIANT: never leave a bead open&lt;br/&gt;that nothing will ever close.&lt;br/&gt;The builder path leaves the waiting bead open&lt;br/&gt;only when it now waits on a new bead."]</pre><div class="mermaid-out" id="mermaid-out-10"></div></figure>
 <p>Why the builder and tester branches diverge so sharply: for a <strong>builder</strong>, the
 waiting bead is a fix that legitimately stays open and waits. For a <strong>tester</strong>, the
 waiting bead is the very thing being ruled on. Same variable, opposite roles — which
@@ -643,7 +691,7 @@ is exactly the ambiguity that produced two epic-wedging bugs before the placehol
 were split apart.</p>
 <hr>
 <h2 id="10-review-findings-and-the-fix-loop">10. Review, findings, and the fix loop</h2>
-<figure class="diagram" role="group" aria-label="Diagram 11"><pre class="mermaid-src" data-index="10" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 12"><pre class="mermaid-src" data-index="11" hidden>flowchart TD
     A["Review bead becomes ready:&lt;br/&gt;every non-terminal child is done"] --&gt; B["Foreman dispatches omg-reviewer"]
     B --&gt; C["Identify changed scope&lt;br/&gt;git diff, bd show epic"]
     C --&gt; D["Read every changed file in full"]
@@ -665,7 +713,7 @@ were split apart.</p>
     M --&gt;|"no"| N(["Close the review bead"])
     M --&gt;|"yes"| O["Reopen the review, status open.&lt;br/&gt;It re-enters ready when&lt;br/&gt;its blockers close."]
     O --&gt; A
-    N --&gt; P["Write build report becomes ready"]</pre><div class="mermaid-out" id="mermaid-out-10"></div></figure>
+    N --&gt; P["Write build report becomes ready"]</pre><div class="mermaid-out" id="mermaid-out-11"></div></figure>
 <h3 id="the-priority-scale">The priority scale</h3>
 <table>
 <thead>
@@ -711,7 +759,7 @@ re-deciding it from less context is the loop&#39;s principal amplifier.</p>
 <p>For prose or a declarative artifact, no test bead is minted at all — the
 review-and-fix cycle is itself the verification.</p>
 <h3 id="the-report-and-epic-close">The report and epic close</h3>
-<figure class="diagram" role="group" aria-label="Diagram 12"><pre class="mermaid-src" data-index="11" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 13"><pre class="mermaid-src" data-index="12" hidden>flowchart TD
     A["Write build report bead&lt;br/&gt;agent=omg-reviewer"] --&gt; B["Read every child bead's comments"]
     B --&gt; C["Synthesize against&lt;br/&gt;doc-templates build-report template"]
     C --&gt; D["Write to docs-base/build-report/id.md&lt;br/&gt;including a hindsight frontmatter block"]
@@ -719,7 +767,7 @@ review-and-fix cycle is itself the verification.</p>
     E --&gt; F["Ready queue drains"]
     F --&gt; G["bd epic close-eligible"]
     G --&gt; H(["Epic closes"])
-    H -.-&gt;|"separate, human-invoked"| I{{"docs to Hindsight sync"}}</pre><div class="mermaid-out" id="mermaid-out-11"></div></figure>
+    H -.-&gt;|"separate, human-invoked"| I{{"docs to Hindsight sync"}}</pre><div class="mermaid-out" id="mermaid-out-12"></div></figure>
 <p>The report bead does <strong>not</strong> close the epic, and writing the report ships nothing.
 The report contains: Summary, Deviations from Spec, Discovered Constraints, Decisions
 Made During the Build, Discovered Work, Outcome.</p>
@@ -727,7 +775,7 @@ Made During the Build, Discovered Work, Outcome.</p>
 <h2 id="11-adjudication-when-a-change-collides-with-a-prior-guarantee">11. Adjudication — when a change collides with a prior guarantee</h2>
 <p>The product manager owns the question &quot;was that behavior still supposed to hold?&quot; It
 is a product judgment, not a build defect for someone else to patch around.</p>
-<figure class="diagram" role="group" aria-label="Diagram 13"><pre class="mermaid-src" data-index="12" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 14"><pre class="mermaid-src" data-index="13" hidden>flowchart TD
     T["A change collides with a guarantee&lt;br/&gt;an earlier epic made"] --&gt; W{"discovered when?"}
     W --&gt;|"mid-build, on a failing test"| AB["adjudicate-build.md"]
     W --&gt;|"at review time, after&lt;br/&gt;the epic's work closed"| AR["adjudicate-review.md"]
@@ -746,7 +794,7 @@ is a product judgment, not a build defect for someone else to patch around.</p>
     S2 --&gt; CL
     S3 --&gt; CL
     S4 --&gt; CL
-    S2 --&gt; SPV["The SUMMONS routes to&lt;br/&gt;summons-plan-verification — see below"]</pre><div class="mermaid-out" id="mermaid-out-12"></div></figure>
+    S2 --&gt; SPV["The SUMMONS routes to&lt;br/&gt;summons-plan-verification — see below"]</pre><div class="mermaid-out" id="mermaid-out-13"></div></figure>
 <h3 id="the-pm-path-keeps-its-planner-summons-deliberately">The PM path keeps its planner summons — deliberately</h3>
 <p>Regression-by-default — section 10, <em>Review, findings, and the fix loop</em> —
 applies to review findings and <strong>not</strong> here. The
@@ -756,7 +804,7 @@ reviewer already did the blast-radius work. A broken-promise ruling is not that 
 &quot;fix&quot; might be restoring prior behavior, adjusting a boundary, or reconciling two
 guarantees that now conflict, and there is often no reproducible defect to pin a
 regression test to.</p>
-<figure class="diagram" role="group" aria-label="Diagram 14"><pre class="mermaid-src" data-index="13" hidden>flowchart TD
+<figure class="diagram" role="group" aria-label="Diagram 15"><pre class="mermaid-src" data-index="14" hidden>flowchart TD
     A["Summons: plan verification&lt;br/&gt;for a PM-adjudicated fix"] --&gt; B{"the planner's choice"}
     B --&gt;|"automated test,&lt;br/&gt;designed BEFORE the fix"| C["Mint TEST, agent=omg-tester&lt;br/&gt;FIX waits on TEST"]
     B --&gt;|"automated test,&lt;br/&gt;run AFTER the fix"| D["Mint TEST, agent=omg-tester&lt;br/&gt;TEST waits on FIX&lt;br/&gt;REVIEW waits on TEST"]
@@ -767,7 +815,7 @@ regression test to.</p>
     D --&gt; Z
     E --&gt; Z
     F --&gt; Z
-    G --&gt; Z</pre><div class="mermaid-out" id="mermaid-out-13"></div></figure>
+    G --&gt; Z</pre><div class="mermaid-out" id="mermaid-out-14"></div></figure>
 <p>The before/after ordering distinction in the first two branches is load-bearing, and
 the wiring differs completely between them. Note the direction flip: in the
 before-case the fix waits on the test; in the after-case the test waits on the fix and

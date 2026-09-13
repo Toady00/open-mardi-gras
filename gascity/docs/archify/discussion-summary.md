@@ -12,6 +12,13 @@ updated_at: 2026-09-13T20:27:28Z
 
 # OMG visual collaboration, document refinement, and build handoff
 
+> Historical handoff, followed by implementation-session clarification. The owner
+> subsequently specified that conversation is the approval interface, initiative
+> docs live in the initiating rig or city's `docs/initiatives/<id>`, and builds
+> start only on a separate explicit human request. Approval does not launch work.
+> See [implementation decisions](../implementation-decisions.md) and the
+> [pack README](../../README.md). The accompanying IR now reflects that clarification.
+
 ## Purpose and standing
 
 This is an agent-authored summary of the owner's discussion about the Gas City
