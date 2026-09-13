@@ -1,6 +1,15 @@
 # Agent Instructions
 
-**Important** ask me at the beginning of every session if I want to discuss how/when to ship the centralized repo docs to the git remote.
+## Gas City Scope Notes
+
+- Agent `scope = "rig"` excludes a city-level instance; omit `scope` to
+  support both city and rig instances. In the current Gas City loader,
+  city-level pack imports expand rig-scoped and unscoped agents across
+  configured rigs. An explicit rig import with the same binding takes
+  precedence for that rig. This is separate from `defaults.rig.imports`,
+  which copies imports into newly registered rigs. Source:
+  `internal/config/pack.go`, `filterAgentsByScope` and
+  `expandCityImportedAgentsForRigs`.
 
 This repo is the **source of the OMG family of opencode instruments** — the
 agents, skills, and commands that make up the OMG workflow — together with the

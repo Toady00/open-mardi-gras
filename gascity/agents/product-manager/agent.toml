@@ -1,0 +1,2 @@
+session = "tmux"
+tmux_alias = "{{or .Rig .CityName}}-{{.AgentBase}}"

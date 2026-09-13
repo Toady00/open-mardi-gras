@@ -5,7 +5,11 @@
     "external_directory": {
       "~/code/clones/opencode/**": "allow",
       "/Users/brandondennis/code/clones/opencode/**": "allow",
-      "~/code/personal/open-mardi-gras/master/**": "allow"
+      "~/code/personal/open-mardi-gras/master/**": "allow",
+      "/Users/brandondennis/clones/gascity/**": "allow",
+      "~/clones/gascity/**": "allow",
+      "/Users/brandondennis/clones/gascity-packs/**": "allow",
+      "~/clones/gascity-packs/**": "allow",
     }
   },
   "agent": {
@@ -21,8 +25,8 @@
     "omg-product-manager":           {"model": "{env:OPENCODE_OMG_PRODUCT_MANAGER_MODEL}"},
     "omg-reviewer":                  {"model": "{env:OPENCODE_OMG_REVIEWER_MODEL}"},
     "omg-technical-program-manager": {"model": "{env:OPENCODE_OMG_TECHNICAL_PROGRAM_MANAGER_MODEL}"},
-    "omg-test-planner":              {"model": "{env:OPENCODE_OMG_TEST_PLANNER_MODEL}"}
-
+    "omg-test-planner":              {"model": "{env:OPENCODE_OMG_TEST_PLANNER_MODEL}"},
+    "fable":                         {"model": "anthropic/claude-fable-5-1"},
+    "grok":                          {"model": "xai/grok-4.6"}
   }
 }
-

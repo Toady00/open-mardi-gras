@@ -1,0 +1,5 @@
+[pack]
+name = "omg"
+schema = 2
+version = "0.1.0"
+description = "Software development workflows."

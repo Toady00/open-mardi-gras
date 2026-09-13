@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Proposed artifact and memory flow",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [1080, 450]
+  },
+  "stages": [
+    { "label": "Discuss" },
+    { "label": "Approve direction" },
+    { "label": "Generate / refine" },
+    { "label": "Publish revisions" },
+    { "label": "Ship / memory" }
+  ],
+  "nodes": [
+    { "id": "human-pm-architect", "type": "frontend", "label": "Human + PM / architect", "sublabel": "conversation", "stage": 0, "row": 1, "yOffset": -35, "width": 150, "tag": "proposed" },
+    { "id": "approved-json-ir", "type": "database", "label": "Approved IR baseline", "sublabel": "immutable revision / hash", "stage": 1, "row": 1, "yOffset": -35, "width": 160 },
+    { "id": "html-review", "type": "frontend", "label": "Human change review", "sublabel": "baseline vs candidate renders", "stage": 1, "row": 2, "yOffset": -45, "width": 160 },
+    { "id": "candidate-json-ir", "type": "external", "label": "Candidate JSON IR", "sublabel": "proposal, never an override", "stage": 2, "row": 2, "yOffset": -45, "width": 160 },
+    { "id": "discussion-summary", "type": "backend", "label": "Discussion summary", "sublabel": "supplementary Markdown", "stage": 2, "row": 0, "yOffset": -20, "width": 160 },
+    { "id": "formula-design-docs", "type": "backend", "label": "Shared refinement", "sublabel": "PRD / HLD / ADR / Specs", "stage": 2, "row": 1, "yOffset": -35, "width": 160, "tag": "initial set + later edits" },
+    { "id": "canonical-markdown", "type": "database", "label": "Canonical remote ref", "sublabel": "published Markdown revisions", "stage": 3, "row": 1, "yOffset": -35, "width": 160, "tag": "exact doc authority" },
+    { "id": "built-vs-spec-report", "type": "backend", "label": "Build + final report", "sublabel": "pinned specs + built evidence", "stage": 3, "row": 2, "yOffset": -45, "width": 160, "tag": "evidence + why" },
+    { "id": "existing-hindsight-ship", "type": "backend", "label": "hindsight ship", "sublabel": "existing Markdown pipeline", "stage": 4, "row": 1, "yOffset": -35, "width": 160 },
+    { "id": "hindsight-memory", "type": "database", "label": "Hindsight memory", "sublabel": "derived context, not authority", "stage": 4, "row": 2, "yOffset": -45, "width": 160 }
+  ],
+  "flows": [
+    { "id": "author-ir", "from": "human-pm-architect", "to": "approved-json-ir", "label": "author + approve revision", "variant": "emphasis", "route": "straight", "labelAt": [202, 187] },
+    { "id": "author-summary", "from": "human-pm-architect", "to": "discussion-summary", "label": "author alongside visuals", "fromSide": "top", "toSide": "left", "via": [[100, 137]], "labelAt": [280, 137] },
+    { "id": "accept-new-baseline", "from": "html-review", "to": "approved-json-ir", "label": "approve new baseline", "variant": "emphasis" },
+    { "id": "read-approved-ir", "from": "approved-json-ir", "to": "formula-design-docs", "label": "read approved IR directly", "variant": "emphasis", "route": "straight", "labelAt": [422, 278] },
+    { "id": "supplement-direction", "from": "discussion-summary", "to": "formula-design-docs", "label": "fill gaps only", "fromSide": "bottom", "toSide": "top", "labelAt": [530, 187] },
+    { "id": "publish-summary", "from": "discussion-summary", "to": "canonical-markdown", "label": "publish summary", "fromSide": "right", "toSide": "top", "via": [[745, 137]], "labelAt": [745, 187] },
+    { "id": "publish-design-docs", "from": "formula-design-docs", "to": "canonical-markdown", "label": "publish revisions", "variant": "emphasis", "route": "straight", "labelAt": [637, 187] },
+    { "id": "suggest-ir-changes", "from": "formula-design-docs", "to": "candidate-json-ir", "label": "suggest IR changes", "variant": "emphasis", "labelAt": [530, 298] },
+    { "id": "review-candidate", "from": "candidate-json-ir", "to": "html-review", "label": "visual change review", "variant": "emphasis", "labelAt": [423, 392] },
+    { "id": "publish-report", "from": "built-vs-spec-report", "to": "canonical-markdown", "label": "publish report later" },
+    { "id": "ship-canonical-docs", "from": "canonical-markdown", "to": "existing-hindsight-ship", "label": "draft + accepted revisions", "variant": "emphasis", "route": "straight", "labelAt": [852, 278] },
+    { "id": "retain-markdown", "from": "existing-hindsight-ship", "to": "hindsight-memory", "label": "replace same ID", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelAt": [960, 298] }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Generate once, refine every set",
+      "items": [
+        "Generate once, then ALWAYS refine, no supplied change needed. Later edits enter the same stage: assess whole set, justify corrections/candidate, revise, distinct PM + architect cross-review.",
+        "One writer; both lenses across set. Live edits stay draft until review passes. Ready exact revision or human decision. Original IR immutable; candidate approval reconciles docs, not build approval."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Cost and review limits",
+      "items": [
+        "Useful, sufficiently reliable software: credible omission cost vs. complexity, delay, maintenance, including workflow. Hypotheticals alone cannot block; only justified required findings do.",
+        "Required / optional / deferred with observable trigger / rejected. Requirements bind unless human changes scope. Deferrals ship as docs/ADRs; triggers mean reassess, not autoimplement."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Publish prose, keep visuals out",
+      "items": [
+        "Drafts ship throughout refinement; approval independent of ingestion. Idle queue supports later batches across sessions/initiatives. Accepted: same IDs, native builds. Reports: built vs. spec + why, even partial/blocked.",
+        "Pinned compare: architecture ONLY. These types use before/after renders + change summary. JSON/HTML and all diff evidence stay outside Hindsight. IR = direction; Git = docs; memory = context."
+      ]
+    }
+  ]
+}

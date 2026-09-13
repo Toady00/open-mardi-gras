@@ -9,3 +9,7 @@ docs-setup:
 # Regenerate omg_flowchart.html from omg_flowchart.md.
 docs-build:
     node tools/docs/build-flowchart-html.mjs
+
+# Sync the Gas City pack's vendored Archify skill.
+archify-sync:
+    just --justfile gascity/justfile archify-sync

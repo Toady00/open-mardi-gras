@@ -1,0 +1,67 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Proposed OMG workflow",
+    "locale": "en",
+    "animation": "none",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "authoring", "label": "Initial generation once / shared refinement for initial and later revisions" },
+    { "id": "approval", "label": "Human decisions / persistent approval queue" },
+    { "id": "execution", "label": "Released native builds" },
+    { "id": "reporting", "label": "Outcome reports / ongoing Markdown shipping to Hindsight" }
+  ],
+  "mainPath": ["discussion", "approve_ir", "docs_formula", "refinement", "pending_queue", "accept_publish", "native_gc", "report_publish"],
+  "nodes": [
+    { "id": "discussion", "lane": "authoring", "col": 0, "width": 146, "type": "frontend", "label": "Human + PM/architect", "sublabel": "Iterate IR + summary" },
+    { "id": "approve_ir", "lane": "authoring", "col": 1, "width": 146, "type": "security", "label": "Approve direction IR", "sublabel": "Initial inspected revision" },
+    { "id": "docs_formula", "lane": "authoring", "col": 2, "width": 146, "type": "backend", "label": "Generate initial docs", "sublabel": "Once per initiative" },
+    { "id": "refinement", "lane": "authoring", "col": 3, "width": 146, "type": "backend", "label": "Shared refinement", "sublabel": "Assess / revise / cross-review", "tag": "PM + architect / whole set" },
+    { "id": "later_edit", "lane": "approval", "col": 2, "width": 146, "type": "frontend", "label": "Later substantive edit", "sublabel": "Invalidates readiness" },
+    { "id": "change_review", "lane": "approval", "col": 3, "width": 146, "type": "security", "label": "Human decision", "sublabel": "Candidate IR / unresolved" },
+    { "id": "pending_queue", "lane": "approval", "col": 4, "width": 146, "type": "database", "label": "Await human approval", "sublabel": "Exact revision / persistent" },
+    { "id": "accept_publish", "lane": "approval", "col": 5, "width": 146, "type": "security", "label": "Authorize specs", "sublabel": "Publish status: accepted" },
+    { "id": "native_gc", "lane": "execution", "col": 5, "width": 146, "type": "backend", "label": "Native GC workflows", "sublabel": "Plan/decompose/build/review" },
+    { "id": "report_publish", "lane": "reporting", "col": 5, "width": 146, "type": "backend", "label": "Reconcile report", "sublabel": "Built vs. spec + why; ship" }
+  ],
+  "edges": [
+    { "from": "discussion", "to": "approve_ir", "role": "main" },
+    { "from": "approve_ir", "to": "docs_formula", "label": "IR", "role": "main", "variant": "security" },
+    { "from": "docs_formula", "to": "refinement", "role": "main", "fromSide": "right", "toSide": "left", "route": "straight" },
+    { "from": "later_edit", "to": "refinement", "label": "same process", "role": "branch" },
+    { "from": "refinement", "to": "change_review", "label": "needs decision", "role": "branch" },
+    { "from": "change_review", "to": "refinement", "label": "reconcile", "role": "return", "variant": "dashed" },
+    { "from": "refinement", "to": "pending_queue", "label": "ready / finish", "role": "main" },
+    { "from": "pending_queue", "to": "accept_publish", "label": "later: batch", "role": "async", "variant": "dashed" },
+    { "from": "accept_publish", "to": "native_gc", "label": "release", "role": "main", "variant": "security" },
+    { "from": "native_gc", "to": "report_publish", "role": "main" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One refinement process",
+      "items": [
+        "Assess whole-set impact, alignment, completeness; justify corrections or candidate IR; revise affected docs. Initial set needs no supplied change.",
+        "Within refinement: distinct PM product + architect technical cross-review, one writer; iterate on required findings. Live edits stay draft until pass. Ready exact revision or human decision."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Cost and stop rule",
+      "items": [
+        "Useful, sufficiently reliable software: credible omission cost in expected use vs. complexity, delay, maintenance. Apply to workflow too; possibility alone cannot block.",
+        "Required / optional / deferred with revisit trigger / rejected. Only justified required findings block. Requirements bind unless human changes scope; details in README."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Publish, approve, build",
+      "items": [
+        "Drafts ship during refinement; ingestion is not approval. Idle queue: later batches across sessions/initiatives publish accepted, same IDs; release native builds.",
+        "Candidate IR approval is not spec/build approval. Reports require built vs. spec, deviations, why, even partial/blocked; ship via Hindsight. JSON/HTML and diff evidence stay out."
+      ]
+    }
+  ]
+}

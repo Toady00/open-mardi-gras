@@ -1,0 +1,7 @@
+# List available recipes.
+default:
+    @just --list
+
+# Replace the vendored Archify skill with the pinned upstream snapshot.
+archify-sync:
+    bash scripts/archify-sync.sh
