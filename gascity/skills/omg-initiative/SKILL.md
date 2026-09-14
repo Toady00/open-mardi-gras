@@ -8,6 +8,9 @@ description: Discuss, model, author, refine, approve and explicitly launch Gas C
 ## Conversation and durable state
 
 Either PM or architect can lead. The human speaks to agents, not a queue CLI.
+Build context using the always-present Hindsight prompt guidance: list available
+mental models and fetch the relevant ones, then reflect as soon as useful
+background questions emerge. Reflect again as the conversation develops.
 Use `gc <binding> initiative` to persist decisions between sessions. The default
 binding is `omg`; resolve the installed binding rather than assume agent addresses.
 `initiative list` lists durable city-wide records; `show <bead>` returns one.

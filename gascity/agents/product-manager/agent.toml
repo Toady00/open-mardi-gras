@@ -1,6 +1,6 @@
 session = "tmux"
 tmux_alias = "{{or .Rig .CityName}}-{{.AgentBase}}"
-append_fragments = ["omg-workflow", "hindsight-brief"]
+append_fragments = ["omg-workflow", "omg-hindsight"]
 
 [env]
 HINDSIGHT_MEMORY = "1"

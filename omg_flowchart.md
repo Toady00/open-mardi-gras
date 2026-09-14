@@ -16,6 +16,13 @@ CAS and survive agent sessions. Rig-initiated documents live in that rig's
 `docs/initiatives/<id>`; city-initiated documents use the city's same directory.
 Approval and build initiation are separate human decisions.
 
+Both PM and architect receive the shared `omg-hindsight` prompt fragment in city
+and rig sessions. They first list available mental models and fetch the content
+of those relevant to the conversation. As soon as they identify useful background
+questions, they reflect; new context and questions can prompt further reflection
+during the same conversation. Retrieved memory informs discussion and review,
+while current Git documents and code remain authoritative for exact facts.
+
 ```mermaid
 flowchart TD
     TALK["Human discusses initiative with PM or architect<br/>JSON IR, generated HTML, living Markdown summary"]

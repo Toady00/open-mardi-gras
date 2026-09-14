@@ -21,7 +21,8 @@ The schema-2 [pack manifest](pack.toml) declares `omg`, version `0.1.0`.
 
 Both agents use tmux sessions and omit `scope`, allowing city and rig instances.
 They share the [initiative workflow](skills/omg-initiative/SKILL.md), pinned
-[Archify](skills/archify/SKILL.md), and the Hindsight read fragment.
+[Archify](skills/archify/SKILL.md), and the
+[shared Hindsight context fragment](template-fragments/omg-hindsight.template.md).
 
 | Resource | Purpose |
 | --- | --- |
@@ -112,9 +113,17 @@ implemented, reviewed and actually published code against the pinned spec revisi
 
 ## Hindsight
 
-OMG depends on the separate `hindsight` Gas City pack. PM and architect opt into
-its shared read fragment with `HINDSIGHT_MEMORY=1`. The consuming city supplies
+OMG depends on the separate `hindsight` Gas City pack. PM and architect always
+receive OMG's shared Hindsight context fragment through `append_fragments` in
+their agent configuration. The consuming city supplies
 `HINDSIGHT_BANK` and the API/profile configuration; the pack assumes no bank.
+
+The fragment tells both agents to list available mental models when building
+conversation context and fetch the content of models they judge relevant. They
+reflect as soon as a useful background question emerges and may reflect again
+as the conversation develops. This replaces the dependency's generic
+once-per-task brief for these agents. The instructions are part of their rendered
+prompts, not dependent on an optional skill load, and are maintained in one file.
 
 Hindsight owns the document-memory integration:
 
