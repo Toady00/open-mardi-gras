@@ -94,6 +94,12 @@ Records use native atomic metadata updates in the city work store. Launch intent
 is persisted before external dispatch. Repeated build requests for the same rig
 and approved snapshot return its receipt. Lost acknowledgements require inspecting
 the native workflow and binding its existing root, not blindly repeating dispatch.
+For a failed launch that created no workflow, `initiative abandon` records an
+operator-authorized abandoned attempt after the launcher has exited and an
+exact-store check finds no workflow evidence. A new explicit request can then
+retry. Closed/partial workflow evidence and store errors prevent abandonment.
+City launches with relocated graph storage require native storage inspection;
+the current CLI cannot prove absence there with an exact-store list.
 
 An authoring workflow gets three automatic refinement attempts. An unresolved
 required finding or decision then returns to conversation. This bounds unattended
@@ -144,14 +150,20 @@ and substitute local dependency paths in a temporary pack manifest. They do not
 start agents, publish documents, or write to a real memory bank.
 
 The initial verification covers Git revision/readiness checks, separate approval
-and launch, ambiguous dispatch recovery behavior, and native formula compilation.
+and launch, guarded abandonment/retry, and native formula compilation. It also
+executes the refinement checker with a stubbed GC transport and no `yq` on PATH,
+and verifies all compiled check paths resolve to executable pack assets.
 A live managed-city rehearsal is still required to establish end-to-end provider,
 controller, publication and Hindsight behavior in a consuming installation.
 
 The build formula extends `build-from-plan-base`. Gas City replaces whole steps
 on override, so scoped steps explicitly preserve the pinned native dependencies,
 routes, checks and drains. Their descriptions resolve from the dependency's asset
-layers. Review these overrides when updating the official pack pin.
+layers. Check executables also resolve through those layers using `../assets/`
+paths, rather than depending on an obsolete `.gc/scripts` installation shim.
+The controller compares Git bytes for readiness; `yq` is needed for agent-side
+snapshot creation and accepted-document comparison. Review the overrides when
+updating the official pack pin.
 
 ## Archify
 

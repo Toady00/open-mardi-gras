@@ -68,16 +68,14 @@ def frontmatter(content):
     return json.loads(run("yq", "--front-matter=extract", "-o=json", ".", data=content))
 
 
-def snapshot(repo, directory, revision, kind, paths=None):
+def snapshot_files(repo, directory, revision, kind, paths=None):
+    """Read the exact Git blobs; safe for controller checks without a YAML tool."""
     safe_relative(directory)
     if not re.fullmatch(r"[0-9a-f]{40,64}", revision):
         raise ValueError("revision must be an exact Git commit SHA")
     if git(repo, "rev-parse", f"{revision}^{{commit}}").decode().strip() != revision:
         raise ValueError("revision is not a commit")
     rows = git(repo, "ls-tree", "-r", "-z", revision, "--", directory).split(b"\0")
-    files = {}
-    ids = set()
-    types = set()
     requested = set(paths or [])
     for row in filter(None, rows):
         entry, raw_path = row.split(b"\t", 1)
@@ -90,7 +88,15 @@ def snapshot(repo, directory, revision, kind, paths=None):
             continue
         if typ != "blob" or mode not in {"100644", "100755"}:
             raise ValueError(f"snapshot cannot include symlink or submodule: {path}")
-        content = git(repo, "show", f"{revision}:{path}")
+        yield path, git(repo, "show", f"{revision}:{path}")
+
+
+def snapshot(repo, directory, revision, kind, paths=None):
+    files = {}
+    ids = set()
+    types = set()
+    requested = set(paths or [])
+    for path, content in snapshot_files(repo, directory, revision, kind, paths):
         item = {"sha256": hashlib.sha256(content).hexdigest()}
         if kind == "direction":
             if path.endswith(".json"):
@@ -132,8 +138,10 @@ def assert_current(state, snap):
     if dirty.strip():
         raise ValueError("initiative has uncommitted edits; commit and refine the changed set")
     head = git(state["repo"], "rev-parse", "HEAD").decode().strip()
-    current = snapshot(state["repo"], state["directory"], head, "docs")
-    if current["digest"] != snap["digest"]:
+    current = {path: hashlib.sha256(content).hexdigest()
+               for path, content in snapshot_files(state["repo"], state["directory"], head, "docs")}
+    expected = {path: item["sha256"] for path, item in snap["files"].items()}
+    if current != expected:
         raise ValueError("document revision changed; shared refinement is required")
 
 
@@ -188,6 +196,36 @@ class Ledger:
             raise ValueError("initiative changed concurrently; reread it before retrying")
         return value
 
+    def launch_evidence(self, bead, operation, op):
+        # gc beads list can silently skip stores that fail to open. Absence
+        # requires an exact-store, uncached read, not that federated inventory.
+        listing = ["list", "--all", "--limit", "0", "--long",
+                   "--include-infra", "--include-gates", "--include-templates"]
+        if op["rig"]:
+            rows = gc("bd", "--city", self.city, "--rig", op["rig"],
+                      *listing)
+        else:
+            config = run(os.environ.get("GC_BIN", "gc"), "config", "show", "--city", self.city)
+            graph = json.loads(run("yq", "-p=toml", "-o=json", ".storage.classes.graph", data=config))
+            if graph not in {None, "", "work"}:
+                raise ValueError("city graph store is relocated; cannot prove launch absence with an exact-store list; "
+                                 "recover the existing workflow or inspect native storage before repair")
+            rows = self.bd(*listing)
+        if not isinstance(rows, list):
+            raise ValueError("expected complete uncached bead inventory")
+        matches = []
+        for row in rows:
+            if not isinstance(row, dict) or not row.get("id"):
+                raise ValueError("invalid bead inventory entry")
+            meta = row.get("metadata") or {}
+            if not isinstance(meta, dict):
+                raise ValueError("invalid bead metadata in launch inventory")
+            if (meta.get("gc.var.operation") == operation
+                    or (op.get("source") and meta.get("gc.source_bead_id") == op["source"])
+                    or (row["id"] == op.get("source") and meta.get("workflow_id"))):
+                matches.append(row["id"])
+        return matches
+
 
 def authority(args):
     if not args.authority or not args.authority.strip():
@@ -240,7 +278,7 @@ def main(argv=None):
     p.add_argument("action", choices=["init", "list", "show", "direction", "snapshot",
                                      "review", "ready", "decision", "revise", "accept",
                                      "materialize", "generate", "refine", "start",
-                                     "recover", "settle", "check"])
+                                     "recover", "abandon", "settle", "check"])
     p.add_argument("bead", nargs="?")
     p.add_argument("--slug")
     p.add_argument("--title")
@@ -255,6 +293,8 @@ def main(argv=None):
     p.add_argument("--note")
     p.add_argument("--workflow")
     p.add_argument("--operation")
+    p.add_argument("--launcher-stopped", action="store_true",
+                   help="confirm the original launcher and its child processes have exited")
     p.add_argument("--binding", default="omg")
     p.add_argument("--push", choices=["true", "false"], default="false")
     p.add_argument("--open-pr", choices=["true", "false"], default="false")
@@ -334,9 +374,11 @@ def main(argv=None):
             artifact_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
             digest=snap["digest"], direction=state["direction"]["digest"], at=now())
     elif action in {"ready", "check"}:
-        if action == "check" and state.get("phase") == "needs-human":
-            print(encoded(dict(outcome="human", note=state.get("decision"))))
-            return
+        if state.get("phase") == "needs-human":
+            if action == "check":
+                print(encoded(dict(outcome="human", note=state.get("decision"))))
+                return
+            raise ValueError("unresolved human decision; cannot mark approval-ready")
         validate_reviews(state)
         if action == "check":
             print(encoded(dict(outcome="pass")))
@@ -368,10 +410,12 @@ def main(argv=None):
         intent = authority(args)
         if not state.get("direction"):
             raise ValueError("direction approval required")
-        if action == "generate" and any(o["kind"] == "generate" for o in state["operations"].values()):
+        if action == "generate" and any(o["kind"] == "generate" and o["phase"] != "abandoned"
+                                        for o in state["operations"].values()):
             raise ValueError("initial generation already requested; recover or refine it")
         if action != "start" and any(o["kind"] in {"generate", "refine"}
-                                     and o["phase"] != "settled" for o in state["operations"].values()):
+                                     and o["phase"] not in {"settled", "abandoned"}
+                                     for o in state["operations"].values()):
             raise ValueError("document workflow still active or launch unresolved")
         rig = args.rig if args.rig is not None else state["rig"]
         if rig and rig not in ledger.rigs:
@@ -386,6 +430,14 @@ def main(argv=None):
             # Repeated requests for this rig and accepted revision reuse the
             # recorded operation, including failed or interrupted launches.
             key = "build-" + rig + "-" + snap["digest"]
+            attempts = {k: o for k, o in state["operations"].items()
+                        if k == key or k.startswith(key + "-retry-")}
+            for attempt in attempts.values():
+                if attempt["phase"] != "abandoned":
+                    print(encoded(attempt))
+                    return
+            if attempts:
+                key += "-retry-" + uuid.uuid4().hex
         else:
             key = action + "-" + uuid.uuid4().hex
         if key in state["operations"]:
@@ -431,11 +483,27 @@ def main(argv=None):
             existing["receipt"] = result
         else:
             state["operations"][key] = op
+    elif action == "abandon":
+        evidence = authority(args)
+        op = state["operations"].get(args.operation)
+        if not op or op["phase"] != "launching":
+            raise ValueError("only an unresolved launching operation can be abandoned")
+        if not args.launcher_stopped or not args.note or not args.note.strip():
+            raise ValueError("confirm --launcher-stopped and explain the failed launch with --note")
+        matches = ledger.launch_evidence(args.bead, args.operation, op)
+        if matches:
+            raise ValueError("launch has workflow evidence; recover or inspect: " + ", ".join(matches))
+        op.update(phase="abandoned", abandonment=dict(authority=evidence, reason=args.note,
+                                                      launcher_stopped=True, checked_at=now()))
+        # Save with the original CAS version. A concurrent recovery or receipt
+        # must win rather than being overwritten by an absence-based decision.
     elif action == "recover":
         authority(args)
         op = state["operations"].get(args.operation)
         if not op or not args.workflow:
             raise ValueError("--operation and an existing --workflow are required")
+        if op["phase"] == "abandoned":
+            raise ValueError("abandoned operation has unexpected workflow evidence; inspect before recovery")
         root = one(gc("bd", "show", args.workflow))
         meta = root.get("metadata", {})
         if (meta.get("gc.kind") != "workflow" or meta.get("gc.formula_name") != op["formula"]

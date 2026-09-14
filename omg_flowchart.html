@@ -303,6 +303,10 @@ Approval and build initiation are separate human decisions.</p>
     ACCEPTED["Accepted record and status publication&lt;br/&gt;No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
     INTENT["Persist launch intent before native dispatch&lt;br/&gt;Repeated request returns receipt;&lt;br/&gt;ambiguous acknowledgement requires recovery"]
+    RECOVER{"Launcher exited; inspect exact launch store&lt;br/&gt;Does workflow evidence exist?"}
+    BIND["Recover the matching native workflow"]
+    ABANDON["Human-authorized abandonment of failed launch&lt;br/&gt;Preserve attempt and source in history; no dispatch"]
+    INSPECT["Resolve store access or inspect relocated graph storage&lt;br/&gt;Keep launch unresolved"]
     NATIVE["omg-build extends native build-from-plan-base&lt;br/&gt;Pinned specs to native requirements adapter&lt;br/&gt;Plan, decompose, implement, review and repair"]
     RECON["Reconcile every requirement against pinned specs&lt;br/&gt;Implementation and verification evidence; deviations and authority"]
     FINAL["Native finalization and optional code publication"]
@@ -317,6 +321,11 @@ Approval and build initiation are separate human decisions.</p>
     SPECS --&gt;|"changes"| EDIT
     ACCEPTED -.-&gt;|"later, separate request"| START
     START --&gt; INTENT --&gt; NATIVE --&gt; RECON --&gt; FINAL --&gt; REPORT
+    INTENT --&gt;|"failed or lost acknowledgement"| RECOVER
+    RECOVER --&gt;|"yes, including closed or partial work"| BIND
+    RECOVER --&gt;|"no; exact-store absence confirmed"| ABANDON
+    RECOVER --&gt;|"cannot prove absence"| INSPECT
+    ABANDON -.-&gt;|"new explicit request"| START
     NATIVE --&gt;|"failure or blocked"| REPORT
     RECON --&gt;|"required violation"| REPORT
     FINAL --&gt;|"failure"| REPORT
@@ -329,6 +338,12 @@ reviews, up to three automatic attempts. Exhaustion returns the unresolved issue
 to the human, not a false pass. Native scope teardown preserves reporting after
 build failure and after the root settles. A terminal build root therefore does
 not prove that its reporting assignment finished.</p>
+<p>Readiness checks compare the reviewed Git inventory and bytes without invoking
+<code>yq</code>; unresolved human decisions cannot be marked ready. Native check executables
+resolve from pack asset layers. Abandonment requires confirmation that the original
+launcher and its children have exited. Store errors and concurrent record changes
+prevent it. City launches with relocated graph stores require native storage
+inspection rather than inferring absence from an incomplete federated listing.</p>
 <p>Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.
 Neither publication nor ingestion approves direction or starts implementation.</p>

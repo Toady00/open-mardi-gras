@@ -6,7 +6,9 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -16,6 +18,7 @@ PACK = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("initiative", PACK / "assets/scripts/initiative.py")
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+LiveLedger = m.Ledger
 
 
 class GitFixture(unittest.TestCase):
@@ -58,6 +61,53 @@ class GitFixture(unittest.TestCase):
                 digest=self.snap["digest"], direction=self.direction["digest"], verdict="pass")
 
 class RevisionTests(GitFixture):
+    def test_controller_check_executes_without_yq(self):
+        self.reviews()
+        bin_dir = self.repo / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "python3").symlink_to(sys.executable)
+        gc_stub = bin_dir / "gc"
+        gc_stub.write_text(f"#!{sys.executable}\n" + '''
+import json, os, sys
+args = sys.argv[1:]
+if args[:2] == ["bd", "show"]:
+    print(json.dumps({"id": "check-bead", "metadata": {"omg.binding": "omg", "omg.initiative": "city-123"}}))
+elif args[:2] == ["rig", "list"]:
+    print(json.dumps({"city_path": os.environ["TEST_REPO"], "city_name": "fixture", "rigs": []}))
+elif args[:2] == ["bd", "--city"]:
+    print(json.dumps({"id": "city-123", "metadata": {"omg.state": os.environ["TEST_STATE"]}}))
+elif args[:2] == ["omg", "initiative"]:
+    os.execv(sys.executable, [sys.executable, os.environ["TEST_COMMAND"], *args[2:]])
+else:
+    sys.exit("unexpected gc call: " + repr(args))
+''')
+        gc_stub.chmod(0o755)
+        baseline = self.commit()  # Keep test executables and review evidence across resets.
+        env = {**os.environ, "PATH": str(bin_dir) + ":/usr/bin:/bin", "GC_BEAD_ID": "check-bead",
+               "GC_BIN": str(gc_stub), "TEST_STATE": m.encoded(self.state), "TEST_REPO": str(self.repo),
+               "TEST_COMMAND": str(PACK / "assets/scripts/initiative.py")}
+        self.assertIsNone(shutil.which("yq", path=env["PATH"]))
+        script = str(PACK / "assets/scripts/checks/omg-refinement.sh")
+        result = subprocess.run([script], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["outcome"], "pass")
+        # Committed changes, additions and removals must still invalidate the
+        # revision even though the controller no longer reparses frontmatter.
+        for change in ["edit", "add", "remove"]:
+            with self.subTest(change=change):
+                if change == "edit":
+                    path = self.docs / "spec.md"
+                    path.write_text(path.read_text() + "R2: New scope.\n")
+                elif change == "add":
+                    (self.docs / "extra.md").write_text("unreviewed document")
+                else:
+                    (self.docs / "hld.md").unlink()
+                self.commit()
+                result = subprocess.run([script], env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("revision changed", result.stderr)
+                m.git(self.repo, "reset", "--hard", baseline)
+
     def test_direction_requires_exact_commit_and_render_pair(self):
         for sha, files in [("HEAD", [f"{self.directory}/direction.json"]),
                            (self.sha, [f"{self.directory}/direction.json"]),
@@ -152,6 +202,9 @@ class LaunchTests(GitFixture):
                 owner.state = copy.deepcopy(state)
                 return m.encoded(state)
 
+            def launch_evidence(self, bead, operation, op):
+                raise AssertionError("test must supply an explicit launch inventory")
+
         self.ledger_patch = patch.object(m, "Ledger", FakeLedger)
         self.ledger_patch.start()
         self.addCleanup(self.ledger_patch.stop)
@@ -162,6 +215,84 @@ class LaunchTests(GitFixture):
             command.assert_not_called()
         self.assertEqual(self.state["phase"], "accepted")
         self.assertFalse(self.state["operations"])
+
+    def test_ready_cannot_clear_a_human_decision(self):
+        self.invoke("decision", "city-123", "--note", "human must resolve scope")
+        self.invoke("check", "city-123")  # A handoff ends the automatic loop.
+        with self.assertRaisesRegex(ValueError, "unresolved human"):
+            self.invoke("ready", "city-123")
+        self.assertEqual(self.state["phase"], "needs-human")
+
+    def failed_start(self):
+        self.invoke("accept", "city-123", "--authority", "approved")
+        with patch.object(m, "gc", side_effect=[{"id": "app-source"}, ValueError("target missing")]):
+            with self.assertRaisesRegex(ValueError, "target missing"):
+                self.invoke("start", "city-123", "--authority", "start")
+        return next(iter(self.state["operations"]))
+
+    def abandon(self, key):
+        self.invoke("abandon", "city-123", "--operation", key, "--authority", "operator request",
+                    "--launcher-stopped", "--note", "Launcher exited after target resolution failed")
+
+    def test_abandoned_build_can_restart_and_retry_deduplicates(self):
+        key = self.failed_start()
+        with patch.object(m.Ledger, "launch_evidence", return_value=[]), patch.object(m, "gc") as command:
+            self.abandon(key)
+            command.assert_not_called()  # Abandonment itself cannot dispatch.
+        self.assertEqual(self.state["operations"][key]["phase"], "abandoned")
+        self.assertEqual(self.state["operations"][key]["source"], "app-source")
+        with patch.object(m, "gc", side_effect=[{"id": "app-new-source"}, {"workflow_id": "app-new-root"}]) as command:
+            self.invoke("start", "city-123", "--authority", "retry after installing roles")
+            self.invoke("start", "city-123", "--authority", "same request repeated")
+            self.assertEqual(command.call_count, 2)
+        self.assertEqual(len(self.state["operations"]), 2)
+        new_key = next(k for k in self.state["operations"] if k != key)
+        self.assertEqual(self.state["operations"][new_key]["phase"], "launched")
+
+    def test_abandon_requires_authority_and_launcher_quiescence(self):
+        key = self.failed_start()
+        before = copy.deepcopy(self.state)
+        with patch.object(m.Ledger, "launch_evidence") as inventory:
+            with self.assertRaisesRegex(ValueError, "explicit instruction"):
+                self.invoke("abandon", "city-123", "--operation", key)
+            with self.assertRaisesRegex(ValueError, "launcher-stopped"):
+                self.invoke("abandon", "city-123", "--operation", key, "--authority", "abandon")
+            inventory.assert_not_called()
+        self.assertEqual(self.state, before)
+
+    def test_existing_workflow_or_inventory_failure_prevents_abandonment(self):
+        key = self.failed_start()
+        before = copy.deepcopy(self.state)
+        with patch.object(m.Ledger, "launch_evidence", return_value=["app-root"]):
+            with self.assertRaisesRegex(ValueError, "workflow evidence"):
+                self.abandon(key)
+        with patch.object(m.Ledger, "launch_evidence", side_effect=ValueError("store unavailable")):
+            with self.assertRaisesRegex(ValueError, "store unavailable"):
+                self.abandon(key)
+        self.assertEqual(self.state, before)
+
+    def test_concurrent_receipt_prevents_abandonment(self):
+        key = self.failed_start()
+        def inventory(*args):
+            self.state["operations"][key]["phase"] = "launched"
+            return []
+        with patch.object(m.Ledger, "launch_evidence", side_effect=inventory):
+            with self.assertRaisesRegex(ValueError, "CAS conflict"):
+                self.abandon(key)
+        self.assertEqual(self.state["operations"][key]["phase"], "launched")
+
+    def test_abandoned_authoring_attempt_does_not_block_generation_or_refinement(self):
+        for kind in ["generate", "refine"]:
+            with self.subTest(kind=kind):
+                self.state["operations"] = {"old": dict(kind=kind, phase="launching", rig="app", formula="omg-docs")}
+                with patch.object(m.Ledger, "launch_evidence", return_value=[]):
+                    self.abandon("old")
+                with patch.object(m, "gc", return_value={"workflow_id": "app-root"}) as command:
+                    self.invoke(kind, "city-123", "--authority", "retry failed launch")
+                    command.assert_called_once()
+                self.assertEqual(len(self.state["operations"]), 2)
+                with self.assertRaises(ValueError):
+                    self.invoke(kind, "city-123", "--authority", "duplicate")
 
     def test_explicit_request_required_and_repeated_start_deduplicated(self):
         self.invoke("accept", "city-123", "--authority", "approved")
@@ -246,6 +377,16 @@ class NativeFormulaTests(unittest.TestCase):
                     data = json.loads(result.stdout)
                     self.assertTrue(data["ok"])
                     steps = {s["id"]: s for s in data["steps"]}
+                    checks = [s["metadata"]["gc.check_path"] for s in steps.values()
+                              if "gc.check_path" in s.get("metadata", {})]
+                    self.assertTrue(checks, "expected compiled runtime checks")
+                    for check in checks:
+                        self.assertTrue(Path(check).is_absolute(), check)
+                        self.assertTrue(Path(check).is_file(), check)
+                        self.assertTrue(os.access(check, os.X_OK), check)
+                    if formula != "omg-build":
+                        self.assertIn((PACK / "assets/scripts/checks/omg-refinement.sh").resolve(),
+                                      [Path(check).resolve() for check in checks])
                     if formula == "omg-build":
                         report = steps["omg-build.omg-report"]
                         self.assertEqual(report["metadata"]["gc.scope_role"], "teardown")
@@ -275,6 +416,38 @@ class NativeFormulaTests(unittest.TestCase):
                             self.assertEqual(len(matches), 1, list(steps))
                             self.assertEqual(matches[0]["metadata"]["gc.run_target"], "{{omg_binding}}." + role)
                         self.assertEqual(steps[formula + ".refinement"]["metadata"]["gc.kind"], "ralph")
+
+
+class LaunchInventoryTests(unittest.TestCase):
+    def test_inventory_is_uncached_complete_and_includes_closed_or_partial_work(self):
+        ledger = LiveLedger.__new__(LiveLedger)
+        ledger.city = "/city"
+        rows = [{"id": "closed-root", "status": "closed", "metadata": {
+                    "gc.var.initiative": "city-123", "gc.var.operation": "attempt"}},
+                {"id": "partial", "metadata": {"gc.source_bead_id": "source"}},
+                {"id": "unrelated", "metadata": {"gc.var.operation": "other"}}]
+        with patch.object(m, "gc", return_value=rows) as command:
+            self.assertEqual(ledger.launch_evidence("city-123", "attempt", {"source": "source", "rig": "app"}),
+                             ["closed-root", "partial"])
+        self.assertIn("--all", command.call_args.args)
+        self.assertEqual(command.call_args.args[:5], ("bd", "--city", "/city", "--rig", "app"))
+        self.assertIn("--limit", command.call_args.args)
+        with patch.object(m, "gc", return_value={"_cache_age_s": 0, "beads": []}):
+            with self.assertRaisesRegex(ValueError, "uncached"):
+                ledger.launch_evidence("city-123", "attempt", {"rig": "app"})
+
+    def test_city_abandonment_requires_unrelocated_graph_store(self):
+        ledger = LiveLedger.__new__(LiveLedger)
+        ledger.city = "/city"
+        for graph in [None, "work", "infra"]:
+            with self.subTest(graph=graph), patch.object(m, "run", side_effect=[b"config", json.dumps(graph).encode()]), patch.object(m, "gc", return_value=[]) as command:
+                if graph == "infra":
+                    with self.assertRaisesRegex(ValueError, "relocated"):
+                        ledger.launch_evidence("city-123", "attempt", {"rig": ""})
+                    command.assert_not_called()
+                else:
+                    self.assertEqual(ledger.launch_evidence("city-123", "attempt", {"rig": ""}), [])
+                    self.assertEqual(command.call_args.args[:3], ("bd", "--city", "/city"))
 
 
 if __name__ == "__main__":

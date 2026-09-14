@@ -29,6 +29,10 @@ flowchart TD
     ACCEPTED["Accepted record and status publication<br/>No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
     INTENT["Persist launch intent before native dispatch<br/>Repeated request returns receipt;<br/>ambiguous acknowledgement requires recovery"]
+    RECOVER{"Launcher exited; inspect exact launch store<br/>Does workflow evidence exist?"}
+    BIND["Recover the matching native workflow"]
+    ABANDON["Human-authorized abandonment of failed launch<br/>Preserve attempt and source in history; no dispatch"]
+    INSPECT["Resolve store access or inspect relocated graph storage<br/>Keep launch unresolved"]
     NATIVE["omg-build extends native build-from-plan-base<br/>Pinned specs to native requirements adapter<br/>Plan, decompose, implement, review and repair"]
     RECON["Reconcile every requirement against pinned specs<br/>Implementation and verification evidence; deviations and authority"]
     FINAL["Native finalization and optional code publication"]
@@ -43,6 +47,11 @@ flowchart TD
     SPECS -->|"changes"| EDIT
     ACCEPTED -.->|"later, separate request"| START
     START --> INTENT --> NATIVE --> RECON --> FINAL --> REPORT
+    INTENT -->|"failed or lost acknowledgement"| RECOVER
+    RECOVER -->|"yes, including closed or partial work"| BIND
+    RECOVER -->|"no; exact-store absence confirmed"| ABANDON
+    RECOVER -->|"cannot prove absence"| INSPECT
+    ABANDON -.->|"new explicit request"| START
     NATIVE -->|"failure or blocked"| REPORT
     RECON -->|"required violation"| REPORT
     FINAL -->|"failure"| REPORT
@@ -57,6 +66,13 @@ reviews, up to three automatic attempts. Exhaustion returns the unresolved issue
 to the human, not a false pass. Native scope teardown preserves reporting after
 build failure and after the root settles. A terminal build root therefore does
 not prove that its reporting assignment finished.
+
+Readiness checks compare the reviewed Git inventory and bytes without invoking
+`yq`; unresolved human decisions cannot be marked ready. Native check executables
+resolve from pack asset layers. Abandonment requires confirmation that the original
+launcher and its children have exited. Store errors and concurrent record changes
+prevent it. City launches with relocated graph stores require native storage
+inspection rather than inferring absence from an incomplete federated listing.
 
 Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.

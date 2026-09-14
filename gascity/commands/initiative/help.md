@@ -19,6 +19,7 @@ gc omg initiative accept BEAD --authority TEXT
 gc omg initiative start BEAD --rig RIG --authority TEXT [--push true] [--open-pr true]
 gc omg initiative materialize BEAD [--input specs]
 gc omg initiative recover BEAD --operation KEY --workflow ROOT --authority TEXT
+gc omg initiative abandon BEAD --operation KEY --launcher-stopped --note REASON --authority TEXT
 gc omg initiative settle BEAD --operation KEY --workflow ROOT
 ```
 
@@ -41,7 +42,26 @@ Records use the city work store and native metadata CAS; publication uses the
 owner repository's normal Git policy. Runtime requires `gc`, Git, Python 3,
 Mike Farah's `yq`, and a working city Beads backend with metadata CAS support.
 
-If launch acknowledgement is lost, the record remains `launching`. Do not repeat
-the external operation blindly. Inspect native state and recover the matching
-workflow. A conflict or transport failure exits nonzero. No background process
-or custom dispatcher is started by this command.
+If launch acknowledgement is lost, the record remains `launching`. Inspect native
+state and `recover` the matching workflow. If launch failed before creating a
+workflow, first confirm the original launcher AND its child processes have
+exited. Then use `abandon` with that confirmation, the reason, and the human's
+instruction. Never use it while the original launch could still complete.
+
+Abandonment checks all beads, including closed and partial work, in the exact
+launch store. Existing workflow evidence, an unavailable store, or a concurrent
+record change prevents abandonment. City launches with a relocated graph store
+are refused because the current native CLI cannot provide an exact-store absence
+check there; inspect native storage and recover existing work instead. Federated
+listings that silently omit unavailable stores are not sufficient proof.
+
+An abandoned operation remains in history with its authority, reason and source
+bead. Abandonment does not launch anything. A subsequent explicit `generate`,
+`refine`, or `start` request creates a fresh operation. Repeating that request
+reuses the new active build receipt. Successfully launched or settled operations
+cannot be abandoned; use native workflow recovery for those.
+
+Readiness checks compare Git bytes and inventory to the reviewed snapshot, so
+the controller does not require `yq`. Agent-invoked snapshot creation and accepted
+document comparison still require it. `ready` refuses unresolved human decisions.
+A conflict or transport failure exits nonzero. No custom dispatcher is started.

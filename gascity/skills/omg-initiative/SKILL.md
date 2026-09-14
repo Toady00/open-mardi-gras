@@ -162,9 +162,27 @@ decomposes, builds and reviews using official Gas City roles. Repeated starts fo
 the same rig and approved snapshot return the saved operation. An ambiguous launch
 is not retried blindly. Inspect its source bead/native graph and use `recover`
 with the matching existing workflow. If no workflow exists, investigate the
-recorded error before an operator repairs the intent. Never use force replacement
-to hide uncertainty. Native state owns graph execution; OMG stores decision and
-launch receipts only.
+recorded error and confirm the launcher and all its child processes have exited.
+Only then, on the human's instruction, run:
+
+```sh
+gc omg initiative abandon <bead> --operation <key> --launcher-stopped \
+  --note '<why the launch failed; how its termination was confirmed>' \
+  --authority '<human instruction and session/message reference>'
+```
+
+The command checks the exact launch store, including closed and partial work.
+Existing workflow evidence requires recovery, not abandonment. Store errors or
+concurrent state changes prevent abandonment. For a city with a relocated graph
+store, it refuses to infer absence from a partial or cached listing; inspect the
+native storage state instead. Keep any orphan source bead identified in the
+abandoned operation for inspection; it is not authorization to implement work.
+
+The abandoned attempt remains in history. A subsequent explicit human launch
+request can create a new operation; abandonment itself never dispatches work.
+Do not abandon an operation while its original launcher could still complete.
+Never use force replacement to hide uncertainty. Native state owns graph
+execution; OMG stores decision and launch receipts only.
 
 ## Build report
 
