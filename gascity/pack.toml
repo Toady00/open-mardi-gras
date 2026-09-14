@@ -4,10 +4,6 @@ schema = 2
 version = "0.1.0"
 description = "Software development workflows."
 
-[imports.hindsight]
-source = "https://github.com/Toady00/hindsight-gc-pack.git"
-version = "sha:1ca1807a3bd3df2866f8653a9492d0b83146b8a7"
-
 [imports.gc]
 source = "https://github.com/gastownhall/gascity-packs.git//gascity"
 version = "sha:b43abe633283a7769346d32360ff747d561fa0a4"

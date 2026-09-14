@@ -17,7 +17,9 @@ CAS and survive agent sessions. Rig-initiated documents live in that rig's
 Approval and build initiation are separate human decisions.
 
 Both PM and architect receive the shared `omg-hindsight` prompt fragment in city
-and rig sessions. They first list available mental models and fetch the content
+and rig sessions. The city imports Hindsight separately alongside OMG, keeping
+the archivist at `hindsight.archivist` and providing `gc hindsight` commands.
+They first list available mental models and fetch the content
 of those relevant to the conversation. As soon as they identify useful background
 questions, they reflect; new context and questions can prompt further reflection
 during the same conversation. Retrieved memory informs discussion and review,

@@ -356,13 +356,22 @@ class NativeFormulaTests(unittest.TestCase):
             pack.mkdir()
             for name in ["agents", "assets", "formulas", "template-fragments"]:
                 (pack / name).symlink_to(PACK / name, target_is_directory=True)
-            (pack / "pack.toml").write_text(
-                '[pack]\nname="omg"\nschema=2\nversion="0.1.0"\n'
-                f'[imports.gc]\nsource={json.dumps(os.environ["GC_BASE_PACK"])}\n'
-                f'[imports.hindsight]\nsource={json.dumps(os.environ["HINDSIGHT_PACK"])}\n')
+            manifest = json.loads(m.run("yq", "-p=toml", "-o=json", ".", str(PACK / "pack.toml")))
+            self.assertNotIn("hindsight", manifest.get("imports", {}))
+            manifest["imports"]["gc"] = {"source": os.environ["GC_BASE_PACK"]}
+            (pack / "pack.toml").write_bytes(m.run("yq", "-p=json", "-o=toml", ".",
+                                                 data=json.dumps(manifest).encode()))
             (root / "city.toml").write_text(
                 '[workspace]\nname="omg-check"\n'
-                f'[imports.omg]\nsource={json.dumps(str(pack))}\n')
+                f'[imports.omg]\nsource={json.dumps(str(pack))}\n'
+                f'[imports.hindsight]\nsource={json.dumps(os.environ["HINDSIGHT_PACK"])}\n')
+            result = subprocess.run(["gc", "agent", "list", "--city", str(root), "--json"],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            names = [agent["qualified_name"] for agent in json.loads(result.stdout)["agents"]]
+            self.assertEqual([name for name in names if "archivist" in name], ["hindsight.archivist"])
+            self.assertIn("omg.product-manager", names)
+            self.assertIn("omg.architect", names)
             for formula in ["omg-docs", "omg-refine", "omg-build"]:
                 with self.subTest(formula=formula):
                     result = subprocess.run(["gc", "formula", "show", formula,

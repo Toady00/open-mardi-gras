@@ -37,11 +37,15 @@ for the clarification to the original [visual proposal](docs/archify/README.md).
 
 ## Importing the pack
 
-In your Gas City configuration, point an import at this pack root:
+In your city's configuration, import OMG and Hindsight as siblings:
 
 ```toml
 [imports.omg]
 source = "/absolute/path/to/omg-pack"
+
+[imports.hindsight]
+source = "https://github.com/Toady00/hindsight-gc-pack.git"
+version = "sha:1ca1807a3bd3df2866f8653a9492d0b83146b8a7"
 ```
 
 While this pack remains inside the original repository, the source path must end
@@ -49,10 +53,12 @@ in `gascity`, not at the parent repository root. A city-level import supports
 city instances and expands eligible agents across configured rigs; an explicit
 rig import with the same binding takes precedence for that rig.
 
-Run `gc import install` after configuration. The manifest pins the official
-Gas City methodology pack and Hindsight pack at the inspected commits. Keep the
-city import so pack commands and the Hindsight archivist are available. Build
-rigs also need the official role agents, as in the official pack's installation:
+Run `gc import install` after configuration. OMG's manifest pins the official
+Gas City methodology pack. The city owns the separate Hindsight import and its
+version selection; the example uses the inspected revision. This keeps the
+archivist at `hindsight.archivist`, outside OMG's namespace, and provides the
+`gc hindsight` commands. Build rigs also need the official role agents, as in
+the official pack's installation:
 
 ```toml
 [[rigs]]
@@ -113,15 +119,19 @@ implemented, reviewed and actually published code against the pinned spec revisi
 
 ## Hindsight
 
-OMG depends on the separate `hindsight` Gas City pack. PM and architect always
+OMG uses the separately city-imported `hindsight` Gas City pack; it does not
+import Hindsight transitively. PM and architect always
 receive OMG's shared Hindsight context fragment through `append_fragments` in
 their agent configuration. The consuming city supplies
 `HINDSIGHT_BANK` and the API/profile configuration; the pack assumes no bank.
+The prompt fragment belongs to OMG and has no dependency on Hindsight's template
+fragments. Its `gc hindsight read` calls and document shipping require the city's
+direct `hindsight` import shown above.
 
 The fragment tells both agents to list available mental models when building
 conversation context and fetch the content of models they judge relevant. They
 reflect as soon as a useful background question emerges and may reflect again
-as the conversation develops. This replaces the dependency's generic
+as the conversation develops. This replaces Hindsight's generic
 once-per-task brief for these agents. The instructions are part of their rendered
 prompts, not dependent on an optional skill load, and are maintained in one file.
 
@@ -154,8 +164,9 @@ python3 -m unittest discover -s test -p 'test_*.py' -v
 ```
 
 Set `GC_BASE_PACK` and `HINDSIGHT_PACK` to local checkout pack roots to also compile
-the formulas using the installed `gc` binary. Tests use temporary Git repositories
-and substitute local dependency paths in a temporary pack manifest. They do not
+the formulas using the installed `gc` binary. Tests use temporary Git repositories,
+a local methodology dependency, and a sibling city-level Hindsight import. They
+also verify that the archivist resolves as `hindsight.archivist`. They do not
 start agents, publish documents, or write to a real memory bank.
 
 The initial verification covers Git revision/readiness checks, separate approval
