@@ -99,15 +99,15 @@ several initiatives and accept selected exact revisions separately.
 
 ## Document contract and publication
 
-Use Hindsight schema 2. Each authored Markdown file has stable `id`, `type`,
-`title`, `status`, `source`, `scope`, `created_at`, and `updated_at`. Timestamps are
-RFC 3339 strings. Types here are `discussion`, `prd`, `hld`, `adr`, `spec`, and
-`build-report`. Status is `draft`, later `accepted`, `superseded` or `deprecated`.
-Authorship remains `source: agent` after human acceptance. Use scope `repo` with
-`repos: [<rig>]` for rig work, or appropriate `platform`/`business` scope and
-affected `repos` for city initiatives. IDs such as `spec.<initiative>.<topic>`
-remain the same across revisions. Include a repository or platform prefix where
-initiative names could collide across the shared bank.
+Before authoring, revising, approving or publishing an eligible Markdown document,
+load `hindsight-shipping` from the city's separately imported Hindsight pack.
+That skill and its `schemas/docs/derive` validator are the source of truth for
+document format, frontmatter, identity, tagging, approval provenance, revision,
+retirement and ingestion. Follow the installed Hindsight contract; do not invent
+or maintain a separate OMG frontmatter dialect. If the reference is unavailable,
+surface the missing dependency rather than guessing its requirements.
+
+OMG defines the documents' purpose and substantive content:
 
 - Discussion records rationale, constraints, open questions and current decisions.
 - PRD defines users, problem, goals, scope/exclusions, stable requirements and
@@ -128,23 +128,21 @@ execution artifacts and receipts under `.omg/`, never `docs/`. JSON/HTML visuals
 may live under `visuals/`; they are never attached to an ingestion request. Do not
 copy raw chat, mail or bead chatter into a summary in place of authoring it.
 
-Validate with the Hindsight pack's installed `schemas/docs/derive`; do not copy the
-old OpenCode templates or native build artifact frontmatter. Drafts can publish
-repeatedly. Use the repository's agreed Git publication policy. Commit only
-intended files and publish to the configured canonical remote ref, directly or
-through its normal PR path. A local commit or open PR is not canonical publication.
-The existing Hindsight orders handle shipping; `gc hindsight ship` queues work,
-not proof of ingestion. Consult its receipts when completion matters. No OMG
-retainer, bank writer or status-triggered build is needed.
+Validate and ship using the procedures in `hindsight-shipping` and the Hindsight
+pack's publication contract. Use the repository's agreed Git publication policy
+to get the intended revisions onto its canonical remote ref. The existing
+Hindsight pipeline owns ingestion and its completion receipts. Publication and
+ingestion do not approve scope or initiate a build.
 
 ## Spec approval and explicit build initiation
 
 `ready` requires passing product and technical reviews for the exact unchanged
 snapshot. Tell the human where to read it; keep the record idle while they decide.
 On explicit approval, use `accept <bead> --authority '<instruction/reference>'`.
-Acceptance never launches work. Update only accepted documents' status to
-`accepted` and their update timestamps, preserving IDs, body and authorship;
-validate and publish those revisions through the usual Git/Hindsight path.
+Acceptance never launches work. Apply the human-approval frontmatter rules from
+`hindsight-shipping` to the exact approved revisions, then validate and publish
+them through that contract. Preserve document identity and substantive content;
+metadata publication is not permission to rewrite approved requirements.
 
 You may now suggest a build. Only an explicit human request permits:
 

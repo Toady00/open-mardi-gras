@@ -32,7 +32,8 @@ approved direction; `--input specs` selects the accepted document snapshot.
 reference. It is an audit record, not authentication. Agents must not invent it.
 `direction` requires adjacent same-stem JSON/HTML pairs at an exact commit. It
 preserves earlier approved baselines. `accept` records approval without changing
-files or launching work; publish accepted statuses separately. `start` requires
+files or launching work; apply and publish the approval metadata specified by
+`hindsight-shipping` separately. `start` requires
 explicit build authority and returns an existing receipt for repeated requests
 against the same accepted revision and rig.
 

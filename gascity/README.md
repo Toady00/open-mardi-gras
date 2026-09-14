@@ -155,6 +155,11 @@ Raw review and execution artifacts live under `.omg/`, outside the scanned docs
 tree. Accepted documents express approved direction; reports provide implementation
 evidence at a stated code revision. Ingestion never approves or launches a build.
 
+For document format, frontmatter and approval provenance, `omg-initiative` directs
+authors to the separately installed `hindsight-shipping` skill and its validator.
+OMG defines document purpose, scope approval and build initiation; Hindsight owns
+the document-format and ingestion contract.
+
 ## Verification
 
 Use the standard-library tests, with no extra test framework:

@@ -142,9 +142,10 @@ else:
             m.validate_reviews(self.state)
 
     def test_acceptance_status_publication_is_not_new_semantic_scope(self):
-        self.state["accepted"] = {"snapshot": self.snap}
+        self.state["accepted"] = {"snapshot": self.snap, "approval": {"evidence": "Human approved this revision"}}
         for path in self.docs.glob("*.md"):
             path.write_text(path.read_text().replace("status: draft", "status: accepted")
+                            .replace("source: agent", "source: human")
                             .replace("2026-09-13T00:00:00Z", "2026-09-14T00:00:00Z"))
         self.commit()
         m.assert_accepted_current(self.state)
@@ -153,6 +154,20 @@ else:
         self.commit()
         with self.assertRaisesRegex(ValueError, "substantively"):
             m.assert_accepted_current(self.state)
+
+    def test_provenance_changes_require_recorded_human_approval(self):
+        path = self.docs / "spec.md"
+        original = path.read_text()
+        for approval, source, status in [({}, "human", "accepted"),
+                                         ({"evidence": "approved"}, "external", "accepted"),
+                                         ({"evidence": "approved"}, "human", "draft")]:
+            with self.subTest(approval=approval, source=source, status=status):
+                self.state["accepted"] = {"snapshot": self.snap, "approval": approval}
+                path.write_text(original.replace("source: agent", f"source: {source}")
+                                .replace("status: draft", f"status: {status}"))
+                self.commit()
+                with self.assertRaisesRegex(ValueError, "substantively"):
+                    m.assert_accepted_current(self.state)
 
     def test_materialized_input_is_immutable_and_outside_docs(self):
         root = Path(m.materialize(self.state, self.snap, "city-123"))

@@ -25,6 +25,12 @@ questions, they reflect; new context and questions can prompt further reflection
 during the same conversation. Retrieved memory informs discussion and review,
 while current Git documents and code remain authoritative for exact facts.
 
+Before authoring or publishing documents, PM and architect load the separately
+installed `hindsight-shipping` skill. Hindsight owns document format, frontmatter
+and approval provenance; OMG owns document purpose and workflow decisions. After
+explicit human approval, the recorded approval permits the corresponding
+Hindsight provenance update without treating it as a substantive spec revision.
+
 ```mermaid
 flowchart TD
     TALK["Human discusses initiative with PM or architect<br/>JSON IR, generated HTML, living Markdown summary"]

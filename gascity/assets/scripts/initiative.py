@@ -146,7 +146,7 @@ def assert_current(state, snap):
 
 
 def assert_accepted_current(state):
-    """Acceptance permits only status/timestamp publication, not hidden edits."""
+    """Allow Hindsight approval metadata publication, not hidden content edits."""
     snap = state["accepted"]["snapshot"]
     dirty = git(state["repo"], "status", "--porcelain", "--untracked-files=all", "--", state["directory"])
     if dirty.strip():
@@ -159,6 +159,12 @@ def assert_accepted_current(state):
         before = git(state["repo"], "show", f"{snap['revision']}:{path}")
         after = git(state["repo"], "show", f"{head}:{path}")
         old_fm, new_fm = frontmatter(before), frontmatter(after)
+        # Hindsight's source field records approval provenance. The human
+        # approval already recorded by accept permits this exact transition.
+        approval = state["accepted"].get("approval", {})
+        if (old_fm.get("source") == "agent" and new_fm.get("source") == "human"
+                and new_fm.get("status") == "accepted" and approval.get("evidence")):
+            old_fm["source"] = "human"
         for fm in (old_fm, new_fm):
             fm.pop("status", None)
             fm.pop("updated_at", None)

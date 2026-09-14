@@ -5,14 +5,16 @@ code and publication evidence. Do not assume that normal reconciliation,
 finalization or publication ran. Reconstruct requirement reconciliation from
 `{{approved_root}}`, revision `{{approved_revision}}`, when the normal path failed.
 
-Write a Hindsight schema-2 `build-report` Markdown document under the initiative's
+Load `hindsight-shipping` for the authoritative format and publication contract.
+Write a Hindsight-compatible `build-report` Markdown document under the initiative's
 original repository at `docs/initiatives/<id>/reports/<operation>.md`. Use a stable
 ID for this run, prefixed by its initiative identity. Include approved direction
 and spec commit/digest, target rig, native workflow ID, assessed code SHA, every
 requirement's implemented/partial/deferred/blocked outcome, evidence, deviations,
 reasons, decision authority, unresolved risks and unfinished work. Explicitly
 distinguish implemented, reviewed, and actually published/integrated code. Do not
-infer post-merge verification. Source remains agent and initial status is draft.
+infer post-merge verification. Follow Hindsight's rules for agent-authored records;
+do not claim human review that has not occurred.
 
 Validate with the Hindsight pack schema and publish the report through the
 initiative repository's agreed canonical Git publication path, independently of
