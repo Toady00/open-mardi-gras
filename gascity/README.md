@@ -27,6 +27,7 @@ They share the [initiative workflow](skills/omg-initiative/SKILL.md), pinned
 | Resource | Purpose |
 | --- | --- |
 | `gc omg initiative` | Revision records, conversation-facing approval state, and explicit workflow initiation |
+| `gc omg prepare-build` | Check local build prerequisites and prepare native validator compatibility |
 | `omg-docs` | Initial PRD, HLD, necessary ADRs and specs, followed by shared refinement |
 | `omg-refine` | Whole-set assessment, successive revision and distinct product/technical cross-review |
 | `omg-build` | Official native planning/build/review continuation, spec reconciliation and post-settlement reporting |
@@ -83,6 +84,10 @@ Runtime prerequisites are Gas City's formula compiler v2, scope teardown and
 `yq`, and Node.js for Archify. Configure the provider and Hindsight bank in the
 consuming city. This pack does not start a custom controller or retainer.
 
+For a first live run, follow [the trial guide](docs/first-build.md). Native build
+validation also requires PyYAML in the selected check interpreter; the preparation
+command verifies it with the controller's sandboxed HOME before launching work.
+
 ## Working through conversation
 
 Ask either role to explore an initiative. The agent records a living discussion
@@ -94,6 +99,14 @@ In another session, ask "What's waiting for my review?" The agent lists those
 records and presents the relevant documents. Discuss changes or approve selected
 specs. The agent publishes accepted statuses separately. Say "Start the build for
 this initiative in app" when you want implementation to begin.
+
+`initiative start` first runs local build preparation. It installs a managed
+forwarding wrapper at the legacy path expected by nested official formulas and
+verifies its native Python/schema dependencies. A recorded interpreter can be
+selected once with `gc omg prepare-build --rig app --python <venv-python>`.
+Preparation failures leave the initiative available for another request, rather
+than creating an unresolved launch. A successful launch records the preparation
+receipt and supplies absolute runtime artifact paths.
 
 Commands are supporting tools for agents, not a required human interface. See
 [command help](commands/initiative/help.md) for the exact operations and recovery.
@@ -177,15 +190,21 @@ start agents, publish documents, or write to a real memory bank.
 The initial verification covers Git revision/readiness checks, separate approval
 and launch, guarded abandonment/retry, and native formula compilation. It also
 executes the refinement checker with a stubbed GC transport and no `yq` on PATH,
-and verifies all compiled check paths resolve to executable pack assets.
+and verifies that OMG's compiled check entry paths resolve to executable pack assets.
+Build preparation tests also invoke the real upstream validator from rig and
+worker directories with stubbed bead reads, proving valid artifacts pass and
+malformed artifacts fail. Native CLI probes cover command discovery, repeated
+preparation, and nested implementation/review/repair check-path resolution.
 A live managed-city rehearsal is still required to establish end-to-end provider,
 controller, publication and Hindsight behavior in a consuming installation.
 
 The build formula extends `build-from-plan-base`. Gas City replaces whole steps
 on override, so scoped steps explicitly preserve the pinned native dependencies,
 routes, checks and drains. Their descriptions resolve from the dependency's asset
-layers. Check executables also resolve through those layers using `../assets/`
-paths, rather than depending on an obsolete `.gc/scripts` installation shim.
+layers. OMG check entry scripts resolve through those layers using `../assets/`
+paths. For native nested formulas that still name `.gc/scripts/checks/`, the
+preparation command explicitly installs the required forwarding wrapper. Both
+paths run the original checker with its own Python validator and schemas.
 The controller compares Git bytes for readiness; `yq` is needed for agent-side
 snapshot creation and accepted-document comparison. Review the overrides when
 updating the official pack pin.

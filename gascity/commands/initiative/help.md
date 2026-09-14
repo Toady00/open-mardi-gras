@@ -37,6 +37,12 @@ files or launching work; apply and publish the approval metadata specified by
 explicit build authority and returns an existing receipt for repeated requests
 against the same accepted revision and rig.
 
+Before recording a new build launch, `start` runs `gc omg prepare-build` for the
+selected rig. Missing roles, validator dependencies, or conflicting runtime files
+fail preparation before a launch intent or source bead is created. The preparation
+receipt is saved on a successful launch. See [prepare-build](../prepare-build/help.md)
+for Python selection and compatibility-wrapper behavior.
+
 Init infers the initiating rig from `GC_RIG`, otherwise uses the city. An explicit
 empty `--rig ''` selects city scope. The owner repository must be a Git root.
 Records use the city work store and native metadata CAS; publication uses the

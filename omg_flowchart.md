@@ -43,6 +43,8 @@ flowchart TD
     SPECS{{"Human approves selected specs through conversation"}}
     ACCEPTED["Accepted record and status publication<br/>No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
+    PREP["Prepare local validator compatibility<br/>Check roles, Python and native schema<br/>Install managed wrapper; no build dispatched yet"]
+    PREPFAIL["Fix the reported preparation error<br/>No launch intent or source bead created"]
     INTENT["Persist launch intent before native dispatch<br/>Repeated request returns receipt;<br/>ambiguous acknowledgement requires recovery"]
     RECOVER{"Launcher exited; inspect exact launch store<br/>Does workflow evidence exist?"}
     BIND["Recover the matching native workflow"]
@@ -61,7 +63,8 @@ flowchart TD
     QUEUE --> SPECS --> ACCEPTED
     SPECS -->|"changes"| EDIT
     ACCEPTED -.->|"later, separate request"| START
-    START --> INTENT --> NATIVE --> RECON --> FINAL --> REPORT
+    START --> PREP --> INTENT --> NATIVE --> RECON --> FINAL --> REPORT
+    PREP -->|"preparation fails"| PREPFAIL
     INTENT -->|"failed or lost acknowledgement"| RECOVER
     RECOVER -->|"yes, including closed or partial work"| BIND
     RECOVER -->|"no; exact-store absence confirmed"| ABANDON
@@ -88,6 +91,13 @@ resolve from pack asset layers. Abandonment requires confirmation that the origi
 launcher and its children have exited. Store errors and concurrent record changes
 prevent it. City launches with relocated graph stores require native storage
 inspection rather than inferring absence from an incomplete federated listing.
+
+Build preparation explicitly provides the legacy checker path used by nested
+official formulas. Its wrapper selects the verified Python environment, sets the
+durable rig root and delegates to the installed native checker and schemas. The
+first workflow work step repeats preparation before the requirements adapter;
+direct launches and resumed setup follow the same path. Runtime artifact paths
+are absolute. This is a local-host compatibility measure for the first live trial.
 
 Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.

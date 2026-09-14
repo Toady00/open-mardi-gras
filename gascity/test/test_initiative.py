@@ -202,11 +202,15 @@ class LaunchTests(GitFixture):
         super().setUp()
         self.reviews()
         self.state["phase"] = "approval-ready"
+        self.preparation = {"ready": True, "rig_root": str(self.repo)}
         owner = self
 
         class FakeLedger:
             city = str(owner.repo)
             rigs = {"app": str(owner.repo)}
+
+            def __init__(self, city_path=None):
+                pass
 
             def load(self, bead):
                 return copy.deepcopy(owner.state), m.encoded(owner.state)
@@ -240,7 +244,7 @@ class LaunchTests(GitFixture):
 
     def failed_start(self):
         self.invoke("accept", "city-123", "--authority", "approved")
-        with patch.object(m, "gc", side_effect=[{"id": "app-source"}, ValueError("target missing")]):
+        with patch.object(m, "gc", side_effect=[self.preparation, {"id": "app-source"}, ValueError("target missing")]):
             with self.assertRaisesRegex(ValueError, "target missing"):
                 self.invoke("start", "city-123", "--authority", "start")
         return next(iter(self.state["operations"]))
@@ -256,10 +260,10 @@ class LaunchTests(GitFixture):
             command.assert_not_called()  # Abandonment itself cannot dispatch.
         self.assertEqual(self.state["operations"][key]["phase"], "abandoned")
         self.assertEqual(self.state["operations"][key]["source"], "app-source")
-        with patch.object(m, "gc", side_effect=[{"id": "app-new-source"}, {"workflow_id": "app-new-root"}]) as command:
+        with patch.object(m, "gc", side_effect=[self.preparation, {"id": "app-new-source"}, {"workflow_id": "app-new-root"}]) as command:
             self.invoke("start", "city-123", "--authority", "retry after installing roles")
             self.invoke("start", "city-123", "--authority", "same request repeated")
-            self.assertEqual(command.call_count, 2)
+            self.assertEqual(command.call_count, 3)
         self.assertEqual(len(self.state["operations"]), 2)
         new_key = next(k for k in self.state["operations"] if k != key)
         self.assertEqual(self.state["operations"][new_key]["phase"], "launched")
@@ -317,19 +321,24 @@ class LaunchTests(GitFixture):
 
         def gc(*args):
             calls.append(args)
+            if args[:2] == ("omg", "prepare-build"):
+                self.assertFalse(self.state["operations"])
+                return self.preparation
             self.assertTrue(any(op["phase"] == "launching" for op in self.state["operations"].values()))
             return {"id": "app-source"} if args[0] == "bd" else {"workflow_id": "app-root"}
 
         with patch.object(m, "gc", gc):
             self.invoke("start", "city-123", "--rig", "app", "--authority", "start build")
             self.invoke("start", "city-123", "--rig", "app", "--authority", "start build")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("--on", calls[1])
-        self.assertIn("omg-build", calls[1])
+        self.assertEqual(len(calls), 3)
+        self.assertIn("--on", calls[2])
+        self.assertIn("omg-build", calls[2])
+        artifact_arg = next(arg for arg in calls[2] if arg.startswith("artifact_root="))
+        self.assertTrue(Path(artifact_arg.split("=", 1)[1]).is_absolute())
 
     def test_ambiguous_dispatch_never_automatically_repeated(self):
         self.invoke("accept", "city-123", "--authority", "approved")
-        with patch.object(m, "gc", side_effect=[{"id": "app-source"}, ValueError("lost acknowledgement")]):
+        with patch.object(m, "gc", side_effect=[self.preparation, {"id": "app-source"}, ValueError("lost acknowledgement")]):
             with self.assertRaisesRegex(ValueError, "acknowledgement"):
                 self.invoke("start", "city-123", "--authority", "start")
         with patch.object(m, "gc") as command:
@@ -355,10 +364,19 @@ class LaunchTests(GitFixture):
 
     def test_failed_intent_persistence_prevents_dispatch(self):
         self.invoke("accept", "city-123", "--authority", "approved")
-        with patch.object(m.Ledger, "save", side_effect=ValueError("CAS unavailable")), patch.object(m, "gc") as command:
+        with patch.object(m.Ledger, "save", side_effect=ValueError("CAS unavailable")), patch.object(m, "gc", return_value=self.preparation) as command:
             with self.assertRaisesRegex(ValueError, "CAS unavailable"):
                 self.invoke("start", "city-123", "--authority", "start")
-            command.assert_not_called()
+            command.assert_called_once_with("omg", "prepare-build", "--rig", "app", "--binding", "omg")
+
+    def test_preparation_failure_creates_no_launch_intent(self):
+        self.invoke("accept", "city-123", "--authority", "approved")
+        before = copy.deepcopy(self.state)
+        with patch.object(m, "gc", side_effect=ValueError("PyYAML unavailable")) as command:
+            with self.assertRaisesRegex(ValueError, "PyYAML"):
+                self.invoke("start", "city-123", "--authority", "start")
+            command.assert_called_once()
+        self.assertEqual(self.state, before)
 
 
 class NativeFormulaTests(unittest.TestCase):
@@ -432,6 +450,7 @@ class NativeFormulaTests(unittest.TestCase):
                         # The finalization producer is checked and must follow
                         # reconciliation through native scope-check controls.
                         self.assertTrue(depends_on("omg-build.finalize.iteration.1", "omg-build.omg-reconcile"))
+                        self.assertTrue(depends_on("omg-build.omg-input.iteration.1", "omg-build.omg-prepare"))
                         self.assertFalse(depends_on("omg-build.workflow-finalize", "omg-build.omg-report"))
                     else:
                         self.assertEqual(formula + ".prd" in steps, formula == "omg-docs")

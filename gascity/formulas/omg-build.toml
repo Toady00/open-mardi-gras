@@ -17,15 +17,22 @@ required = true
 required = true
 
 [[steps]]
+id = "omg-prepare"
+title = "Prepare native validator compatibility and build prerequisites"
+metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-build/prepare.md"
+
+[[steps]]
 id = "omg-input"
 title = "Bridge pinned OMG specs into native planning inputs"
+needs = ["omg-prepare"]
 metadata = { "gc.run_target" = "{{omg_binding}}.architect", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
 description_file = "../assets/workflows/omg-build/input.md"
 [steps.check]
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/omg-build-artifact.sh"
 timeout = "5m"
 
 [[steps]]
@@ -45,7 +52,7 @@ metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = 
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/omg-build-artifact.sh"
 timeout = "5m"
 
 [[steps]]
@@ -72,7 +79,7 @@ metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" 
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/omg-build-artifact.sh"
 timeout = "5m"
 
 [[steps]]
@@ -126,7 +133,7 @@ metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/omg-build-artifact.sh"
 timeout = "5m"
 
 [[steps]]
@@ -153,7 +160,7 @@ description_file = "../assets/workflows/omg-build/finalize.md"
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/build-artifact-valid.sh"
+path = "../assets/scripts/checks/omg-build-artifact.sh"
 timeout = "5m"
 
 [[steps]]

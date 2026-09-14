@@ -175,8 +175,8 @@ def assert_accepted_current(state):
 
 
 class Ledger:
-    def __init__(self):
-        info = gc("rig", "list")
+    def __init__(self, city_path=None):
+        info = gc("rig", "list", *(["--city", city_path] if city_path else []))
         self.city = info["city_path"]
         self.store = "city:" + info["city_name"]
         self.rigs = {r["name"]: r["path"] for r in info["rigs"] if not r.get("hq")}
@@ -289,6 +289,7 @@ def main(argv=None):
     p.add_argument("--slug")
     p.add_argument("--title")
     p.add_argument("--rig", default=None)
+    p.add_argument("--city", default=None, help="explicit city context, also accepted when forwarded by gc")
     p.add_argument("--revision")
     p.add_argument("--file", action="append", default=[])
     p.add_argument("--authority")
@@ -305,7 +306,7 @@ def main(argv=None):
     p.add_argument("--push", choices=["true", "false"], default="false")
     p.add_argument("--open-pr", choices=["true", "false"], default="false")
     args = p.parse_args(argv)
-    ledger = Ledger()
+    ledger = Ledger(args.city)
     if args.action == "init":
         if not args.slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", args.slug):
             raise ValueError("--slug must be a lowercase initiative identifier")
@@ -449,11 +450,16 @@ def main(argv=None):
         if key in state["operations"]:
             print(encoded(state["operations"][key]))
             return
+        if action == "start":
+            preparation = gc(args.binding, "prepare-build", "--rig", rig, "--binding", args.binding)
+            if preparation.get("ready") is not True or not Path(preparation.get("rig_root", "")).is_absolute():
+                raise ValueError("build preparation did not confirm a ready rig")
         formula = {"generate": "omg-docs", "refine": "omg-refine", "start": "omg-build"}[action]
         op = dict(kind=action, phase="launching", formula=formula, rig=rig, authority=intent)
         if action == "start":
             op["approved"] = dict(revision=snap["revision"], digest=snap["digest"],
                                   direction=state["accepted"]["direction"]["digest"])
+            op["preparation"] = preparation
         state["operations"][key] = op
         if action != "start":
             state.update(phase="draft", reviews={})
@@ -461,9 +467,10 @@ def main(argv=None):
         vars_ = dict(initiative=args.bead, operation=key, omg_binding=args.binding)
         if action == "start":
             inputs = materialize(state, snap, args.bead)
+            artifact_root = str(Path(preparation["rig_root"]) / ".omg" / "builds" / args.bead / snap["digest"])
             vars_.update(approved_root=inputs, approved_revision=snap["revision"],
-                         artifact_root=f".omg/builds/{args.bead}/{snap['digest']}",
-                         requirements_path=f".omg/builds/{args.bead}/{snap['digest']}/requirements.md",
+                         artifact_root=artifact_root,
+                         requirements_path=str(Path(artifact_root) / "requirements.md"),
                          push=args.push, open_pr=args.open_pr)
             # Native drain continuations need a source bead. Its creation is
             # covered by the already persisted launch intent.

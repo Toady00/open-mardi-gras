@@ -10,8 +10,8 @@ requested rig must implement only its requirements and satisfy documented
 cross-rig prerequisites. Return unresolved dependency/scope decisions as blocked,
 never authorize other rigs implicitly.
 
-The official planning chain expects `gc.build.requirements.v1`, while OMG's
-published docs use Hindsight schema 2. Write a NATIVE ADAPTER at
+For this trial, OMG supplies a `gc.build.requirements.v1` adapter to the official
+planning chain. Canonical documents follow Hindsight's contract. Write the adapter at
 `{{requirements_path}}` under `{{artifact_root}}`, outside docs/. Follow the
 installed `gc.build.requirements.v1` schema and validator. Include its required
 frontmatter and sections, preserve every stable requirement ID, and link each

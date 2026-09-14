@@ -157,7 +157,14 @@ Do not infer that starting one rig authorizes every rig. Hindsight ingestion is
 independent. Discuss `--push true` and `--open-pr true` separately when applicable;
 the native build defaults leave code local.
 
-Start freezes the approved spec inputs, records durable intent, then slings the
+Start first runs `prepare-build` to verify the build roles and native validator
+and install its local compatibility wrapper. If it fails, surface the preparation
+error; no launch intent or source bead was created. The human can select a Python
+environment with PyYAML using `gc omg prepare-build --rig <rig> --python <path>`.
+That selection is remembered for later preparations. Use the preparation command
+instead of copying upstream scripts or bypassing their checks.
+
+After preparation, start freezes the approved spec inputs, records durable intent, then slings the
 native OMG build continuation to the target rig. It plans implementation,
 decomposes, builds and reviews using official Gas City roles. Repeated starts for
 the same rig and approved snapshot return the saved operation. An ambiguous launch

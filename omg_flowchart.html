@@ -315,6 +315,8 @@ Hindsight provenance update without treating it as a substantive spec revision.<
     SPECS{{"Human approves selected specs through conversation"}}
     ACCEPTED["Accepted record and status publication&lt;br/&gt;No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
+    PREP["Prepare local validator compatibility&lt;br/&gt;Check roles, Python and native schema&lt;br/&gt;Install managed wrapper; no build dispatched yet"]
+    PREPFAIL["Fix the reported preparation error&lt;br/&gt;No launch intent or source bead created"]
     INTENT["Persist launch intent before native dispatch&lt;br/&gt;Repeated request returns receipt;&lt;br/&gt;ambiguous acknowledgement requires recovery"]
     RECOVER{"Launcher exited; inspect exact launch store&lt;br/&gt;Does workflow evidence exist?"}
     BIND["Recover the matching native workflow"]
@@ -333,7 +335,8 @@ Hindsight provenance update without treating it as a substantive spec revision.<
     QUEUE --&gt; SPECS --&gt; ACCEPTED
     SPECS --&gt;|"changes"| EDIT
     ACCEPTED -.-&gt;|"later, separate request"| START
-    START --&gt; INTENT --&gt; NATIVE --&gt; RECON --&gt; FINAL --&gt; REPORT
+    START --&gt; PREP --&gt; INTENT --&gt; NATIVE --&gt; RECON --&gt; FINAL --&gt; REPORT
+    PREP --&gt;|"preparation fails"| PREPFAIL
     INTENT --&gt;|"failed or lost acknowledgement"| RECOVER
     RECOVER --&gt;|"yes, including closed or partial work"| BIND
     RECOVER --&gt;|"no; exact-store absence confirmed"| ABANDON
@@ -357,6 +360,12 @@ resolve from pack asset layers. Abandonment requires confirmation that the origi
 launcher and its children have exited. Store errors and concurrent record changes
 prevent it. City launches with relocated graph stores require native storage
 inspection rather than inferring absence from an incomplete federated listing.</p>
+<p>Build preparation explicitly provides the legacy checker path used by nested
+official formulas. Its wrapper selects the verified Python environment, sets the
+durable rig root and delegates to the installed native checker and schemas. The
+first workflow work step repeats preparation before the requirements adapter;
+direct launches and resumed setup follow the same path. Runtime artifact paths
+are absolute. This is a local-host compatibility measure for the first live trial.</p>
 <p>Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.
 Neither publication nor ingestion approves direction or starts implementation.</p>
