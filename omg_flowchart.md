@@ -43,7 +43,7 @@ flowchart TD
     SPECS{{"Human approves selected specs through conversation"}}
     ACCEPTED["Accepted record and status publication<br/>No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
-    PREP["Prepare local validator compatibility<br/>Check roles, Python and native schema<br/>Install managed wrapper; no build dispatched yet"]
+    PREP["Automatically prepare build dependencies<br/>Provision or reuse private validator runtime<br/>Check roles and schema; install managed wrapper"]
     PREPFAIL["Fix the reported preparation error<br/>No launch intent or source bead created"]
     INTENT["Persist launch intent before native dispatch<br/>Repeated request returns receipt;<br/>ambiguous acknowledgement requires recovery"]
     RECOVER{"Launcher exited; inspect exact launch store<br/>Does workflow evidence exist?"}
@@ -92,8 +92,10 @@ launcher and its children have exited. Store errors and concurrent record change
 prevent it. City launches with relocated graph stores require native storage
 inspection rather than inferring absence from an incomplete federated listing.
 
-Build preparation explicitly provides the legacy checker path used by nested
-official formulas. Its wrapper selects the verified Python environment, sets the
+Build preparation automatically provisions and caches a private validator runtime
+with pinned dependencies. Users do not select an interpreter or install validator
+packages. It also provides the legacy checker path used by nested official
+formulas. Its wrapper uses the managed runtime, sets the
 durable rig root and delegates to the installed native checker and schemas. The
 first workflow work step repeats preparation before the requirements adapter;
 direct launches and resumed setup follow the same path. Runtime artifact paths

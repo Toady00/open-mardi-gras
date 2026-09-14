@@ -315,7 +315,7 @@ Hindsight provenance update without treating it as a substantive spec revision.<
     SPECS{{"Human approves selected specs through conversation"}}
     ACCEPTED["Accepted record and status publication&lt;br/&gt;No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
-    PREP["Prepare local validator compatibility&lt;br/&gt;Check roles, Python and native schema&lt;br/&gt;Install managed wrapper; no build dispatched yet"]
+    PREP["Automatically prepare build dependencies&lt;br/&gt;Provision or reuse private validator runtime&lt;br/&gt;Check roles and schema; install managed wrapper"]
     PREPFAIL["Fix the reported preparation error&lt;br/&gt;No launch intent or source bead created"]
     INTENT["Persist launch intent before native dispatch&lt;br/&gt;Repeated request returns receipt;&lt;br/&gt;ambiguous acknowledgement requires recovery"]
     RECOVER{"Launcher exited; inspect exact launch store&lt;br/&gt;Does workflow evidence exist?"}
@@ -360,8 +360,10 @@ resolve from pack asset layers. Abandonment requires confirmation that the origi
 launcher and its children have exited. Store errors and concurrent record changes
 prevent it. City launches with relocated graph stores require native storage
 inspection rather than inferring absence from an incomplete federated listing.</p>
-<p>Build preparation explicitly provides the legacy checker path used by nested
-official formulas. Its wrapper selects the verified Python environment, sets the
+<p>Build preparation automatically provisions and caches a private validator runtime
+with pinned dependencies. Users do not select an interpreter or install validator
+packages. It also provides the legacy checker path used by nested official
+formulas. Its wrapper uses the managed runtime, sets the
 durable rig root and delegates to the installed native checker and schemas. The
 first workflow work step repeats preparation before the requirements adapter;
 direct launches and resumed setup follow the same path. Runtime artifact paths

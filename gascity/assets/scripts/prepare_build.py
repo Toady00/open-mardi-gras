@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shlex
 import shutil
 import subprocess
@@ -14,6 +15,7 @@ import tempfile
 
 
 MARKER = "# Managed by OMG prepare-build v1\n"
+PYYAML_VERSION = "6.0.3"
 REQUIRED_ROLES = ("gc.run-operator", "gc.design-author", "gc.review-synthesizer",
                   "gc.task-decomposer", "gc.implementation-worker",
                   "gc.implementation-reviewer", "gc.publisher")
@@ -44,21 +46,68 @@ def gate_environment(city):
     return {"PATH": os.pathsep.join(dirs), "HOME": str(city), "TMPDIR": tempfile.gettempdir()}
 
 
-def verify_validator(checker, city, python=None):
+def ensure_runtime(city):
+    """Own the dependency runtime; callers never select or configure Python."""
+    city = Path(city).resolve(strict=True)
+    root = safe_target(city, ".gc/omg-build/runtimes")
+    root.mkdir(parents=True, exist_ok=True)
+    identity = {"schema": 1, "base": os.path.realpath(sys.executable),
+                "version": sys.version, "machine": platform.machine(), "pyyaml": PYYAML_VERSION}
+    key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
+    directory = safe_target(city, f".gc/omg-build/runtimes/{key}")
+    lock = safe_target(city, ".gc/omg-build/runtimes/.lock")
+    env = gate_environment(city)
+    with lock.open("a") as stream:
+        fcntl.flock(stream, fcntl.LOCK_EX)
+        directory.mkdir(exist_ok=True)
+        marker = directory / "owner.json"
+        if marker.is_symlink():
+            raise ValueError(f"unexpected runtime marker symlink: {marker}")
+        if marker.exists():
+            if json.loads(marker.read_text()) != identity:
+                raise ValueError(f"unrecognized managed runtime: {directory}")
+        elif any(directory.iterdir()):
+            raise ValueError(f"refusing to replace an unrecognized runtime directory: {directory}")
+        else:
+            atomic_write(marker, json.dumps(identity, sort_keys=True) + "\n", 0o644)
+        venv = safe_target(city, f".gc/omg-build/runtimes/{key}/venv")
+        python = str(venv / "bin/python3")
+        probe = [python, "-I", "-c", f"import yaml; assert yaml.__version__ == {PYYAML_VERSION!r}"]
+        if Path(python).is_file():
+            try:
+                run(probe, env)
+                return python
+            except (OSError, ValueError):
+                pass  # Repair only this recognized tool-owned environment.
+        print("Preparing OMG build dependencies for this city...", file=sys.stderr)
+        try:
+            run([sys.executable, "-I", "-m", "venv", "--clear", str(venv)], env)
+            # Honor network settings, but never let ambient pip target/prefix/
+            # user settings redirect an install into an application or system.
+            network = {"PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "PIP_NO_INDEX", "PIP_FIND_LINKS",
+                       "PIP_TRUSTED_HOST", "PIP_CERT", "PIP_CLIENT_CERT", "PIP_PROXY",
+                       "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+                       "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+                       "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR"}
+            install_env = {**{k: v for k, v in os.environ.items() if k in network},
+                           **env, "PIP_CONFIG_FILE": os.devnull}
+            run([python, "-I", "-m", "pip", "--disable-pip-version-check", "--no-input",
+                 "--retries", "1", "--timeout", "30", "--cache-dir", str(safe_target(city, ".gc/omg-build/runtimes/wheel-cache")),
+                 "install", "--only-binary=:all:", f"PyYAML=={PYYAML_VERSION}"], install_env)
+            run(probe, env)
+        except (OSError, ValueError) as error:
+            raise ValueError("OMG could not prepare its internal build dependencies. "
+                             "First use needs access to the configured Python package index; "
+                             f"retry after resolving the reported installation error. {error}") from error
+        return python
+
+
+def verify_validator(checker, city, python):
     checker = Path(checker).resolve(strict=True)
     validator = checker.parent.parent / "validate_build_artifact.py"
     if not checker.is_file() or not os.access(checker, os.X_OK) or not validator.is_file():
         raise ValueError("native checker or its adjacent Python validator is missing/not executable")
     env = gate_environment(city)
-    selected = python or os.environ.get("OMG_BUILD_PYTHON", "")
-    python = shutil.which(selected) if selected else shutil.which("python3", path=env["PATH"])
-    if not python:
-        if selected:
-            raise ValueError(f"selected check Python is missing or not executable: {selected}")
-        raise ValueError("python3 is missing from the controller check PATH")
-    # Keep a venv's executable path rather than resolving its symlink to the
-    # base interpreter, but make it independent of later worker directories.
-    python = os.path.abspath(python)
     # Use the native CLI and its bundled schemas, not a copied validator. This
     # temporary probe is operational input, never a published document.
     probe = """---
@@ -86,9 +135,7 @@ This probe does not verify a live agent workflow.
         try:
             run([python, str(validator), "--schema", "gc.build.implementation-summary.v1", "--path", str(path)], env)
         except ValueError as error:
-            raise ValueError(f"native validator preflight failed using {python}. "
-                             f"This interpreter must have PyYAML available with HOME={city}. "
-                             f"Use --python or OMG_BUILD_PYTHON to select a venv with PyYAML. {error}") from error
+            raise ValueError(f"native validator failed in OMG's managed runtime: {error}") from error
     return str(checker), python, env["PATH"]
 
 
@@ -163,7 +210,7 @@ def install_bridge(rig_root, checker, python, gate_path):
     return record
 
 
-def prepare(rig, binding, city_path=None, python=None):
+def prepare(rig, binding, city_path=None):
     info = gc("rig", "list", *(["--city", city_path] if city_path else []))
     city = str(Path(info["city_path"]).resolve(strict=True))
     rigs = {item["name"]: item["path"] for item in info["rigs"] if not item.get("hq")}
@@ -192,13 +239,7 @@ def prepare(rig, binding, city_path=None, python=None):
     checker = next((path for path in reversed(candidates) if path.is_file()), None)
     if checker is None or not checker.is_absolute():
         raise ValueError("loaded formula layers do not provide the native build-artifact checker")
-    if not python and not os.environ.get("OMG_BUILD_PYTHON"):
-        receipt = safe_target(root, ".gc/scripts/checks/.omg-build-artifact.json")
-        if receipt.exists():
-            saved = json.loads(receipt.read_text())
-            if saved.get("schema") != 1 or saved.get("rig_root") != str(root) or not isinstance(saved.get("python"), str):
-                raise ValueError(f"invalid OMG preparation receipt: {receipt}")
-            python = saved["python"]
+    python = ensure_runtime(city)
     checker, python, gate_path = verify_validator(checker, city, python)
     record = install_bridge(root, checker, python, gate_path)
     return {"ready": True, "rig": rig, **record}
@@ -209,11 +250,9 @@ def main():
     parser.add_argument("--rig", default=os.environ.get("GC_RIG", ""))
     parser.add_argument("--binding", default="omg")
     parser.add_argument("--city", default=os.environ.get("GC_CITY_PATH", os.environ.get("GC_CITY", "")))
-    parser.add_argument("--python", default=os.environ.get("OMG_BUILD_PYTHON", ""),
-                        help="Python interpreter with PyYAML; a venv avoids HOME-dependent user packages")
     parser.add_argument("--json", action="store_true", help="output is always JSON")
     args = parser.parse_args()
-    print(json.dumps(prepare(args.rig, args.binding, args.city, args.python), sort_keys=True))
+    print(json.dumps(prepare(args.rig, args.binding, args.city), sort_keys=True))
 
 
 if __name__ == "__main__":

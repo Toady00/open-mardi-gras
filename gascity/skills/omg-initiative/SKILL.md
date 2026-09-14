@@ -159,10 +159,12 @@ the native build defaults leave code local.
 
 Start first runs `prepare-build` to verify the build roles and native validator
 and install its local compatibility wrapper. If it fails, surface the preparation
-error; no launch intent or source bead was created. The human can select a Python
-environment with PyYAML using `gc omg prepare-build --rig <rig> --python <path>`.
-That selection is remembered for later preparations. Use the preparation command
-instead of copying upstream scripts or bypassing their checks.
+error; no launch intent or source bead was created. OMG automatically provisions
+and reuses its private validator dependencies. Do not ask the human to select an
+interpreter, create a virtual environment, or install PyYAML. Use the preparation
+command instead of copying upstream scripts or bypassing their checks. If a
+dependency download fails, report the actual connectivity/package-index error
+and retry preparation after that issue is resolved.
 
 After preparation, start freezes the approved spec inputs, records durable intent, then slings the
 native OMG build continuation to the target rig. It plans implementation,

@@ -20,6 +20,9 @@ This records the owner's clarification after the September 13 workflow handoff.
   paths without upstream edits. Revisit native inheritance and the extra
   requirements representation after observing a real build; the owner expects
   OMG may eventually own the implementation workflow independently.
+- Validator dependencies are OMG's responsibility. First-use preparation creates
+  and caches a private runtime automatically; users do not select Python or
+  manually install the validator's packages.
 
 These instructions supersede the automatic approval-to-build release described
 in the original proposal. The original discussion summary remains a historical

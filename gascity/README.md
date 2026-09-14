@@ -84,9 +84,9 @@ Runtime prerequisites are Gas City's formula compiler v2, scope teardown and
 `yq`, and Node.js for Archify. Configure the provider and Hindsight bank in the
 consuming city. This pack does not start a custom controller or retainer.
 
-For a first live run, follow [the trial guide](docs/first-build.md). Native build
-validation also requires PyYAML in the selected check interpreter; the preparation
-command verifies it with the controller's sandboxed HOME before launching work.
+For a first live run, follow [the trial guide](docs/first-build.md). Build dependency
+setup is automatic when the agent starts a build. OMG provisions and caches its
+own validator environment, including pinned PyYAML, inside the city runtime tree.
 
 ## Working through conversation
 
@@ -102,8 +102,8 @@ this initiative in app" when you want implementation to begin.
 
 `initiative start` first runs local build preparation. It installs a managed
 forwarding wrapper at the legacy path expected by nested official formulas and
-verifies its native Python/schema dependencies. A recorded interpreter can be
-selected once with `gc omg prepare-build --rig app --python <venv-python>`.
+verifies its native Python/schema dependencies in OMG's automatically managed
+environment. First use downloads the pinned dependency; subsequent builds reuse it.
 Preparation failures leave the initiative available for another request, rather
 than creating an unresolved launch. A successful launch records the preparation
 receipt and supplies absolute runtime artifact paths.

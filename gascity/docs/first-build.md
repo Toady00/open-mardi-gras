@@ -23,29 +23,14 @@ env = { HINDSIGHT_BANK = "<your-bank>" }
 Merge this into existing workspace settings rather than replacing other env vars.
 Keep the city itself in Git if city-level agents will own initiative documents.
 
-The native artifact validator requires PyYAML. A dedicated local Python environment
-is useful because controller checks use the city directory as HOME, which can hide
-packages installed only in your normal user site. For example:
+Build dependency setup happens automatically when the agent starts a build. OMG
+creates its own private validator environment and installs pinned PyYAML on first
+use. Later builds reuse the cached environment. There is no interpreter-selection,
+virtual-environment setup, or manual dependency-installation step for you.
 
-```sh
-python3 -m venv /absolute/path/to/omg-build-python
-/absolute/path/to/omg-build-python/bin/python3 -m pip install 'PyYAML>=6,<7'
-```
-
-From your city directory, prepare the chosen rig:
-
-```sh
-gc omg prepare-build --rig app --python /absolute/path/to/omg-build-python/bin/python3
-```
-
-Use your actual rig name in place of `app`. You can omit `--python` if the default
-check interpreter already has PyYAML. The command remembers a selected interpreter;
-`OMG_BUILD_PYTHON` in the workspace environment can also select it explicitly.
-
-Success returns JSON containing `ready: true`, the rig root, original checker,
-installed wrapper and interpreter. It verifies configured build roles and runs a
-temporary document through the actual native validator. It does not start a build
-or contact Hindsight. If preparation fails, fix the reported issue and rerun it.
+First use needs package-index access. If the download fails, the agent reports
+the installation error and can retry after connectivity is restored. Application
+and system Python environments are not modified.
 
 ## Start a conversation
 
@@ -100,16 +85,20 @@ observations will inform how much of the native methodology OMG should retain.
 
 ## What preparation installs
 
+Under `<city>/.gc/omg-build/runtimes/`, OMG manages the validator's Python
+environment and pinned dependency. This cache is shared by the city's rigs and
+survives controller HOME changes. Provisioning and repair are automatic.
+
 `<rig>/.gc/scripts/checks/build-artifact-valid.sh` is an OMG-managed forwarding
 wrapper, with an adjacent hash receipt. A companion Python launcher under
-`<rig>/.gc/scripts/omg-build/bin/` selects the verified interpreter. The wrapper
+`<rig>/.gc/scripts/omg-build/bin/` uses OMG's managed runtime. The wrapper
 sets the durable rig root and executes the checker in the installed official pack.
 The original checker still finds its own validator and schemas and still rejects
 malformed artifacts. Nothing is patched in the upstream checkout.
 
 The setup preserves unrelated or locally modified files, and serializes its own
-updates with a short filesystem lock. Refresh it between builds after changing
-dependency installations or Python environments. This is local-host/tmux support;
+updates with a short filesystem lock. Preparation automatically refreshes its
+managed files when dependencies change. This is local-host/tmux support;
 separate container and remote-worker filesystems need their own provisioning.
 
 ## Verification boundary
@@ -119,3 +108,7 @@ legacy check paths, real native validation through the wrapper, revision guards,
 and launch/recovery behavior. Bead reads in validator tests are stubbed. A live
 provider-driven implementation and publication to your real Git/Hindsight services
 are what this trial is intended to establish.
+
+For optional installation diagnostics, `gc omg prepare-build --rig app` runs the
+same automatic preparation without starting a build. It is not required before
+the normal conversational flow. Replace `app` with your actual rig name.

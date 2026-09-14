@@ -8,7 +8,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-import venv
 from unittest.mock import patch
 
 
@@ -92,14 +91,6 @@ class NativeValidatorTests(unittest.TestCase):
         self.worker.mkdir()
         self.native = Path(os.environ["GC_BASE_PACK"]).resolve()
         self.checker = self.native / "assets/scripts/checks/build-artifact-valid.sh"
-        # Supply the fixture's dependency offline in an isolated interpreter.
-        # Unlike a user-site install, this remains visible when HOME is sandboxed.
-        import yaml
-        environment = self.root / "python-env"
-        venv.EnvBuilder(with_pip=False, symlinks=True).create(environment)
-        self.python = environment / "bin/python3"
-        site = Path(p.run([str(self.python), "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"]).strip())
-        shutil.copytree(Path(yaml.__file__).parent, site / "yaml")
         self.bin = self.root / "bin"
         self.bin.mkdir()
         self.state = self.root / "beads.json"
@@ -121,8 +112,7 @@ print(json.dumps(beads[args[2]]))
         bd_shim = self.bin / "bd"
         bd_shim.write_text("#!/bin/sh\nexit 99\n")
         bd_shim.chmod(0o755)
-        self.environment = patch.dict(os.environ, {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
-                                                   "OMG_BUILD_PYTHON": str(self.python)})
+        self.environment = patch.dict(os.environ, {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"]})
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.report = self.rig / ".omg/build/summary.md"
@@ -159,7 +149,8 @@ No application implementation is claimed by this fixture.
         self.state.write_text(json.dumps(self.beads))
 
     def test_real_checker_succeeds_and_rejects_bad_artifacts_from_rig_and_worktree(self):
-        checker, python, path = p.verify_validator(self.checker, self.city)
+        managed = p.ensure_runtime(self.city)
+        checker, python, path = p.verify_validator(self.checker, self.city, managed)
         receipt = p.install_bridge(self.rig, checker, python, path)
         env = {**p.gate_environment(self.city), "GC_BEAD_ID": "item", "GC_STORE_PATH": str(self.rig),
                "GC_DIR": str(self.city), "GC_WORK_DIR": str(self.worker), "PROBE_BEADS": str(self.state)}
@@ -201,23 +192,52 @@ No application implementation is claimed by this fixture.
         self.assertTrue(Path(result["wrapper"]).is_file())
 
     def test_validator_failure_does_not_install_bridge(self):
-        with patch.dict(os.environ, {"OMG_BUILD_PYTHON": ""}), patch.object(p, "gate_environment", return_value={"PATH": "/does-not-exist", "HOME": str(self.city)}):
-            with self.assertRaisesRegex(ValueError, "python3 is missing"):
-                p.verify_validator(self.checker, self.city)
         validator = self.native / "assets/scripts/validate_build_artifact.py"
         self.assertTrue(validator.is_file())
         with patch.object(p, "run", side_effect=ValueError("PyYAML is required")):
             with self.assertRaisesRegex(ValueError, "PyYAML"):
-                p.verify_validator(self.checker, self.city)
+                p.verify_validator(self.checker, self.city, sys.executable)
         self.assertFalse((self.rig / ".gc").exists())
 
-    def test_relative_python_selection_keeps_the_absolute_venv_path(self):
-        relative = os.path.relpath(self.python)
-        checker, python, path = p.verify_validator(self.checker, self.city, relative)
-        self.assertEqual(python, str(self.python))
-        self.assertNotEqual(python, str(self.python.resolve()))
-        receipt = p.install_bridge(self.rig, checker, python, path)
-        self.assertEqual(receipt["python"], str(self.python))
+    def test_managed_runtime_is_automatic_and_reused(self):
+        outside = self.root / "application-packages"
+        config = self.root / "pip.conf"
+        config.write_text(f"[global]\ntarget = {outside}\n")
+        with patch.dict(os.environ, {"PIP_TARGET": str(outside), "PIP_PREFIX": str(outside),
+                                     "PIP_USER": "1", "PIP_CONFIG_FILE": str(config)}), patch.object(p, "run", wraps=p.run) as commands:
+            python = p.ensure_runtime(self.city)
+            self.assertEqual(p.ensure_runtime(self.city), python)
+            installs = [call for call in commands.call_args_list if "install" in call.args[0]]
+            self.assertEqual(len(installs), 1)
+        self.assertFalse(outside.exists())
+        self.assertTrue(Path(python).is_relative_to(self.city / ".gc/omg-build/runtimes"))
+        self.assertEqual(p.run([python, "-I", "-c", "import yaml; print(yaml.__version__)"],
+                               p.gate_environment(self.city)).strip(), p.PYYAML_VERSION)
+
+    def test_failed_dependency_install_is_retried_automatically(self):
+        original = p.run
+        attempts = []
+        def fail_install_once(args, env=None):
+            if "install" in args:
+                attempts.append(args)
+                if len(attempts) == 1:
+                    raise ValueError("package index unavailable")
+            return original(args, env)
+        with patch.object(p, "run", side_effect=fail_install_once):
+            with self.assertRaisesRegex(ValueError, "internal build dependencies"):
+                p.ensure_runtime(self.city)
+            self.assertFalse((self.rig / ".gc/scripts/checks/build-artifact-valid.sh").exists())
+            python = p.ensure_runtime(self.city)
+            self.assertTrue(Path(python).is_file())
+        self.assertEqual(len(attempts), 2)
+
+    def test_missing_cached_dependency_is_repaired_automatically(self):
+        python = p.ensure_runtime(self.city)
+        module = Path(p.run([python, "-I", "-c", "import yaml; print(yaml.__file__)"],
+                            p.gate_environment(self.city)).strip()).parent
+        shutil.rmtree(module)
+        self.assertEqual(p.ensure_runtime(self.city), python)
+        p.run([python, "-I", "-c", "import yaml"], p.gate_environment(self.city))
 
     @unittest.skipUnless(REAL_GC, "gc is required to exercise command discovery and nested formulas")
     def test_native_command_prepares_paths_for_all_nested_checks(self):
@@ -238,15 +258,21 @@ No application implementation is claimed by this fixture.
             f'[imports.omg]\nsource={json.dumps(str(pack))}\n'
             f'[[rigs]]\nname="app"\npath={json.dumps(str(self.rig))}\n'
             f'[rigs.imports.gc]\nsource={json.dumps(str(self.native / "roles"))}\n')
-        env = {**os.environ, "GC_BIN": REAL_GC, "OMG_BUILD_PYTHON": ""}
+        legacy = p.install_bridge(self.rig, str(self.checker), sys.executable,
+                                  p.gate_environment(self.city)["PATH"])
+        # Old interpreter settings must not govern the managed runtime either.
+        env = {**os.environ, "GC_BIN": REAL_GC, "OMG_BUILD_PYTHON": "/does-not-exist"}
         command = [REAL_GC, "--city", str(self.city), "omg", "prepare-build", "--rig", "app", "--json"]
-        result = subprocess.run([*command, "--python", str(self.python)],
-                                env=env, capture_output=True, text=True)
+        result = subprocess.run(command, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         receipt = json.loads(result.stdout)
         self.assertTrue(receipt["ready"])
-        # The formula can repeat preparation without a custom environment: the
-        # installed receipt preserves the explicitly selected interpreter.
+        self.assertNotEqual(receipt["python"], legacy["python"])
+        self.assertTrue(Path(receipt["python"]).is_relative_to(self.city / ".gc/omg-build/runtimes"))
+        help_result = subprocess.run([*command, "--help"], env=env, capture_output=True, text=True)
+        self.assertEqual(help_result.returncode, 0)
+        self.assertNotIn("--python", help_result.stdout)
+        # Repeated preparation reuses the automatic runtime and installed bridge.
         repeated = subprocess.run(command, env=env, capture_output=True, text=True)
         self.assertEqual(repeated.returncode, 0, repeated.stderr + repeated.stdout)
         self.assertEqual(json.loads(repeated.stdout), receipt)
