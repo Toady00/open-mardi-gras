@@ -15,8 +15,8 @@ Check that no other document workflow is writing this initiative. Generation
 must not replace existing authored documents. If a prior generation partially
 completed, recover its own work rather than regenerate the initiative.
 
-Record unresolved decisions with `initiative decision {{initiative}} --note ...`.
-Subsequent steps must preserve that decision and yield an honest human handoff.
-Set `gc.outcome=pass` before closing this step when its preparation succeeded;
-use `gc.outcome=fail` with diagnostics for execution errors. This outcome contract
-applies to every ordinary step in this workflow.
+Apply the skill's document-step protocol. An unresolved decision uses
+`initiative decision {{initiative}} --operation {{operation}} --note ...`, then
+`initiative complete-step {{initiative}} --operation {{operation}} --step <claimed-id>`.
+That closes this work as interrupted so Gas City skips the remaining scope and
+runs the handoff. Never mark a human-blocked assignment as successful authoring.

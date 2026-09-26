@@ -1,0 +1,3 @@
+scope = "rig"
+session = "tmux"
+nudge = "Run gc hook --claim --json now. If it returns work, execute the claimed step using its instructions and the matching OMG skill, record gc.outcome, close the step, then check your hook again. If no work is available, yield."

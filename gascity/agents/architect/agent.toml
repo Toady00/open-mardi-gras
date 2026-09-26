@@ -1,5 +1,5 @@
 session = "tmux"
-tmux_alias = "{{or .Rig .CityName}}-{{.AgentBase}}"
+nudge = "Run gc hook --claim --json now. If it returns work, execute the claimed step using its instructions and the matching OMG skill's completion protocol, then check your hook again. Ordinary document work uses initiative complete-step, including human interruptions. If no work is available, yield."
 append_fragments = ["omg-workflow", "omg-hindsight"]
 
 [env]

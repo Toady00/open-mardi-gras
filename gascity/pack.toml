@@ -3,7 +3,3 @@ name = "omg"
 schema = 2
 version = "0.1.0"
 description = "Software development workflows."
-
-[imports.gc]
-source = "https://github.com/gastownhall/gascity-packs.git//gascity"
-version = "sha:b43abe633283a7769346d32360ff747d561fa0a4"

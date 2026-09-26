@@ -26,3 +26,6 @@ node_modules/
 .beads/interactions.jsonl
 
 .mise/config.local.toml
+
+# Python bytecode caches from the pack test suite
+__pycache__/

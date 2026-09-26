@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OMG settlement or Gas City dispatch failure",
+  "oneOf": [
+    {
+      "allOf": [
+        {"$ref": "result.schema.json"},
+        {"properties": {"status": {"enum": ["failed", "unsupported"]}}, "required": ["status"]}
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "ok", "error"],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "ok": {"const": false},
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "exit_code"],
+          "properties": {
+            "code": {"type": "string"},
+            "message": {"type": "string"},
+            "exit_code": {"type": "integer"}
+          }
+        }
+      }
+    }
+  ]
+}

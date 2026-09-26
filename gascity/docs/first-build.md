@@ -1,114 +1,155 @@
 # First live build
 
-This trial exercises conversation, documentation, approval, native implementation,
-and the final Hindsight-compatible report. Use a small change in one rig so the
-first result is easy to inspect.
+Use a small change in one rig to exercise conversation, documentation, approval,
+implementation, review and the Hindsight-compatible report.
 
-## Install and prepare
+## Install
 
-Use the sibling OMG/Hindsight city imports and per-rig official build roles in
-the [README](../README.md#importing-the-pack), then run `gc import install`.
-The city must be running with a configured, authenticated provider and a working
-Beads backend. The target rig must be a Git repository with a reachable `origin`
-and a published default branch: native workers start from that remote branch.
+Import OMG and Hindsight as siblings using the [README](../README.md#importing-the-pack),
+then run `gc import install`. Start or reload the city and use fresh agent sessions
+so they receive the updated skills and prompts. OMG supplies its own builder,
+tester and reviewer; no official methodology or role import is required.
 
-Configure the actual Hindsight bank in the city's existing workspace environment,
-along with its endpoint/profile settings as described by the Hindsight pack:
+The city needs an authenticated provider, working Beads, Git, Bash, jq, Mike Farah
+yq v4, and Python 3 for the initiative ledger, native execution verification and
+source-task settlement. Archify needs Node.js. Build verification installs nothing
+and does not use PyYAML. The check command uses the tools on the PATH of the
+process that runs it, controller or worker; it adds no directories of its own.
+
+The target rig must have a clean Git checkout with a commit. All build stages use
+that checkout; this trial supports local-host/tmux sessions sharing its filesystem.
+Avoid overlapping builds in the same checkout. Code remotes are needed only for
+requested publication. The docs repository needs its agreed remote publication path.
+
+Configure Hindsight's actual bank and endpoint/profile as described by its pack:
 
 ```toml
 [workspace]
 env = { HINDSIGHT_BANK = "<your-bank>" }
 ```
 
-Merge this into existing workspace settings rather than replacing other env vars.
-Keep the city itself in Git if city-level agents will own initiative documents.
+Merge this into existing settings. Keep the city in Git if city-level agents own
+initiative documents.
 
-Build dependency setup happens automatically when the agent starts a build. OMG
-creates its own private validator environment and installs pinned PyYAML on first
-use. Later builds reuse the cached environment. There is no interpreter-selection,
-virtual-environment setup, or manual dependency-installation step for you.
-
-First use needs package-index access. If the download fails, the agent reports
-the installation error and can retry after connectivity is restored. Application
-and system Python environments are not modified.
-
-## Start a conversation
-
-Create a rig-level PM conversation, or use an existing one:
+## Conversation, approval, build
 
 ```sh
 gc session new app/omg.product-manager --alias omg-trial
 ```
 
-Ask for the small change you want and discuss its behavior and scope. The agent
-should retrieve relevant Hindsight context, build the visual proposal and living
-discussion summary, and record your approval of the exact visual revision.
-It then generates documents and runs shared refinement. The initiative lives at
-`<rig>/docs/initiatives/<id>`; a city-level conversation uses the city's same path.
-
-When the documents are ready, inspect them and approve the selected specs through
-conversation. The agent applies Hindsight's approval and publication contract.
-Then give the separate build instruction, for example:
+Discuss the change. The agent retrieves relevant Hindsight context, maintains a
+visual proposal and discussion summary, and records your approval of the exact
+visual revision. It generates documents and runs shared refinement. Approve the
+resulting specs through conversation, then give a separate instruction:
 
 > Start the build for this initiative in app. Keep the code local for this trial.
 
-The agent uses `initiative start`. Local preparation runs again before launch,
-and the workflow repeats its preparation step before producing native artifacts.
-Code push/PR creation defaults to disabled. Document publication follows the
-repository's agreed policy independently of those code-publication flags.
+The agent records your request, freezes the approved documents without rewriting
+them, and launches `omg-build`. The architect plans and decomposes, the builder
+implements each tracked item, and the tester and reviewer assess the integrated
+change. Required findings trigger bounded repair/test/review attempts. The
+architect reconciles requirements before finalization. Code push and PR creation
+default to disabled; document publication follows its own agreed policy.
 
-## Inspect the result and capture feedback
+The approved specs must explicitly separate development from downstream execution
+using the `omg-development` contract. Existing initiatives need focused refinement
+and renewed acceptance when adding or changing that contract. Plans cannot invent
+categories or infer them from B/O ID prefixes. The builder delivers required test
+scripts and pipeline wiring, but their later environment-dependent results remain
+pending. Terraform follows the same boundary as application code.
 
-Ask the agent for the initiative ID and native workflow root. The initiative's
-record is available with:
+## When authoring needs a decision
+
+The PM should present a concrete question, recommendation and affected scope in
+your original conversation. Workers record the question and stop the remaining
+authoring work instead of repeatedly starting agents to restate it. The command
+sends mail and a queued nudge; notification receipts and failures appear in the
+initiative record. Ask the PM to inspect that record if a message appears missing.
+
+Answer in the conversation. The PM records the resolution, updates affected
+documents and, when authorized, starts another refinement after the old operation
+settles. If the initial pass stopped before all documents existed, that refinement
+includes the missing authoring steps. Your answer is not spec approval or build
+authorization. A dashboard's failed/interrupted native run can mean a deliberate
+human handoff; consult the operation's semantic `result` for the distinction.
+
+Use a fresh session or explicitly reload the updated `omg-initiative` skill when
+continuing a conversation that predates these handoff rules. Earlier run records
+remain historical; this update does not regrade or rerun them.
+
+## Inspect the result
 
 ```sh
 gc omg initiative show <initiative-bead-id>
 ```
 
-It contains the pinned approvals, preparation details and launch receipt. Inspect
-the code changes and reported test evidence. The architect's final report belongs
-at `docs/initiatives/<id>/reports/<operation>.md` in the original document repository.
-It should reconcile every requirement with implementation evidence, deviations,
-unfinished work and actual publication status.
+The operation record contains the approval, artifact root and launch receipt.
+Inspect its Gas City workflow graph and the files in that artifact root:
 
-Check the `omg-report` assignment separately: the build root can settle before
-post-settlement reporting finishes. A failed build still needs a report. A workflow
-stalled on infrastructure needs that error resolved or its failure recorded before
-the post-settlement assignment can proceed.
+- Original-spec inventory and execution plan.
+- Tracked work/convoy membership and per-item test receipts.
+- Integrated test logs, review findings and requirement reconciliation.
+- Actual code-publication outcome.
 
-For feedback, preserve the initiative/workflow IDs, the failing step or command
-and its error, relevant artifact paths, and the behavior you expected. Useful
-questions are whether the requirements adapter added value, whether review findings
-earned their cost, and whether conversation resumed with enough context. Those
-observations will inform how much of the native methodology OMG should retain.
+For diagnostics, the same checker the controller runs is available as:
 
-## What preparation installs
+```sh
+gc omg verify --stage quality --root <absolute-artifact-root>
+```
 
-Under `<city>/.gc/omg-build/runtimes/`, OMG manages the validator's Python
-environment and pinned dependency. This cache is shared by the city's rigs and
-survives controller HOME changes. Provisioning and repair are automatic.
+Run this diagnostic after the repair/test/review group finishes. Its workers do
+not run the full gate before review; the controller does. A successful drain leaves
+source tasks open. Quality checks exact native manifest membership, successful item
+workflows and finalizers, and current passing receipts, rather than source closure.
 
-`<rig>/.gc/scripts/checks/build-artifact-valid.sh` is an OMG-managed forwarding
-wrapper, with an adjacent hash receipt. A companion Python launcher under
-`<rig>/.gc/scripts/omg-build/bin/` uses OMG's managed runtime. The wrapper
-sets the durable rig root and executes the checker in the installed official pack.
-The original checker still finds its own validator and schemas and still rejects
-malformed artifacts. Nothing is patched in the upstream checkout.
+After writing reconciliation.json and passing reconcile verification, the architect
+may preview source-task settlement within the existing reconciliation step:
 
-The setup preserves unrelated or locally modified files, and serializes its own
-updates with a short filesystem lock. Preparation automatically refreshes its
-managed files when dependencies change. This is local-host/tmux support;
-separate container and remote-worker filesystems need their own provisioning.
+```sh
+gc omg settle --root <absolute-artifact-root> --city <absolute-city-path> --rig <rig-name>
+```
+
+Preview is read-only and checks quality again. `--apply` checks for advertised
+`gc bd update --if-revision` support and integer source revisions at run time.
+A backend that does not advertise it makes apply return unsupported with exit 2
+and no mutation.
+Source tasks remain pending with that reason; this is bookkeeping, not a failed
+code-quality check. Other conflicts or partial settlement must be reported without
+claiming completion. Never close tasks unconditionally or retrofit
+`gc.source_bead_id`. Failed runs preserve open source tasks and findings.
+
+The final report belongs at `docs/initiatives/<id>/reports/<operation>.md` in the
+original document repository. It distinguishes implemented, reviewed and published
+code. Check the `omg-report` bead separately because it runs after root settlement,
+including failed builds. A stalled infrastructure operation must settle or be
+explicitly failed before its report can run.
+Reconcile/finalize verification gates execution evidence, not source-task closure.
+The report must list pending source IDs and settlement reasons. For this no-push
+trial, describe code as local-only. The current report publication requirements
+can block the report bead; retain its local report and publication error rather
+than claiming report completion or Hindsight shipping.
+
+## Upgrading an earlier trial
+
+New builds do not reference the old validator wrappers or cached environments.
+Existing in-flight workflows retain their cooked graph and may still need them;
+finish or explicitly retire those runs before removing their managed files.
+The historical locations were `<city>/.gc/omg-build/runtimes/`,
+`<rig>/.gc/scripts/checks/build-artifact-valid.sh` and its receipt, and
+`<rig>/.gc/scripts/omg-build/bin/`. Inspect ownership before cleanup. OMG does not
+delete existing runtime files during this update. Remove official-pack imports
+from consuming config only if no other workflows there use them.
 
 ## Verification boundary
 
-Automated checks cover native formula compilation, namespacing, command discovery,
-legacy check paths, real native validation through the wrapper, revision guards,
-and launch/recovery behavior. Bead reads in validator tests are stubbed. A live
-provider-driven implementation and publication to your real Git/Hindsight services
-are what this trial is intended to establish.
+If a build fails, let its graph and report settle, fix the cause, and explicitly
+request a retry. The agent uses `initiative start --retry <failed-operation>` for
+unchanged approval, or normal `start` after approving revised docs. A retry is a
+new operation with separate evidence, not an edited history of the failed run.
 
-For optional installation diagnostics, `gc omg prepare-build --rig app` runs the
-same automatic preparation without starting a build. It is not required before
-the normal conversational flow. Replace `app` with your actual rig name.
+Automated tests compile OMG formulas with the actual Gas City CLI without an
+official methodology import, check command/role discovery, and execute verification
+using real Git/yq/jq under normal and restricted controller environments. Bead
+transport is isolated in fixtures. Provider-driven execution and real Git/Hindsight
+publication still need this live trial. Preserve workflow IDs, failing commands,
+artifact paths and expected behavior when reporting feedback.

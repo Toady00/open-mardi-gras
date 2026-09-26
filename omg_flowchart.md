@@ -15,6 +15,10 @@ Conversation is the human interface. Initiative records use native Beads metadat
 CAS and survive agent sessions. Rig-initiated documents live in that rig's
 `docs/initiatives/<id>`; city-initiated documents use the city's same directory.
 Approval and build initiation are separate human decisions.
+Formula workers start with `gc hook --claim --json`, execute the claimed plain
+work step, record its outcome and close it, then check for further routed work.
+They use Gas City's default per-session names so the initiating conversation and
+workers from the same agent template can coexist.
 
 Both PM and architect receive the shared `omg-hindsight` prompt fragment in city
 and rig sessions. The city imports Hindsight separately alongside OMG, keeping
@@ -35,35 +39,50 @@ Hindsight provenance update without treating it as a substantive spec revision.
 flowchart TD
     TALK["Human discusses initiative with PM or architect<br/>JSON IR, generated HTML, living Markdown summary"]
     IR{{"Human approves exact rendered IR revision"}}
-    INITIAL["omg-docs: generate once<br/>PRD, HLD, necessary ADRs, successive specs"]
+    INITIAL["omg-docs: generate once<br/>PRD, HLD, necessary ADRs, successive specs<br/>Explicit development versus downstream contract"]
+    RESUME["Explicitly requested refine after settlement<br/>Fill missing initial documents or revise existing set"]
     EDIT["Later substantive edit<br/>invalidate readiness"]
     REFINE["omg-refine: one shared process<br/>Whole-set assessment and affected revisions<br/>Distinct PM and architect cross-review inside refinement"]
-    NEED{{"Unresolved decision, candidate IR,<br/>or required findings after bounded attempts"}}
+    INTERRUPT["Record identified human question and operation interruption<br/>Mail plus queued nudge to originating conversation<br/>End current check retry budget and fail worker step"]
+    STOPDOC["Gas City aborts scope and skips remaining authoring<br/>Post-settlement handoff reports semantic result"]
+    NEED{{"Human answers the concrete question<br/>Resolve exact decision ID with authority"}}
     QUEUE["Persistent approval-ready record<br/>Exact revision; authoring session can finish"]
     SPECS{{"Human approves selected specs through conversation"}}
     ACCEPTED["Accepted record and status publication<br/>No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
-    PREP["Automatically prepare build dependencies<br/>Provision or reuse private validator runtime<br/>Check roles and schema; install managed wrapper"]
-    PREPFAIL["Fix the reported preparation error<br/>No launch intent or source bead created"]
+    PREP["Check local tools and freeze approved Git blobs<br/>Write operation baseline and absolute artifact root"]
+    PREPFAIL["Fix the reported input or tool error<br/>No launch intent or source bead created"]
     INTENT["Persist launch intent before native dispatch<br/>Repeated request returns receipt;<br/>ambiguous acknowledgement requires recovery"]
     RECOVER{"Launcher exited; inspect exact launch store<br/>Does workflow evidence exist?"}
     BIND["Recover the matching native workflow"]
     ABANDON["Human-authorized abandonment of failed launch<br/>Preserve attempt and source in history; no dispatch"]
     INSPECT["Resolve store access or inspect relocated graph storage<br/>Keep launch unresolved"]
-    NATIVE["omg-build extends native build-from-plan-base<br/>Pinned specs to native requirements adapter<br/>Plan, decompose, implement, review and repair"]
-    RECON["Reconcile every requirement against pinned specs<br/>Implementation and verification evidence; deviations and authority"]
-    FINAL["Native finalization and optional code publication"]
-    REPORT["Post-settlement architect report<br/>Success, partial, blocked and failed builds<br/>Assessed SHA; implemented vs reviewed vs published"]
+    NATIVE["Standalone omg-build<br/>Architect plans directly from approved specs<br/>Independent reviewer checks plan and inventory; up to 3 attempts"]
+    DECOMP["Architect creates development work beads and convoy<br/>Downstream checks retained separately with owner and stage<br/>Mechanical coverage and membership check; up to 3 attempts"]
+    IMPL["Gas City shared single-lane drain through omg-work<br/>Builder implements and tests each member; up to 3 attempts<br/>Source tasks stay open; stop remaining items on failure"]
+    QUALITY["Builder repairs prior findings<br/>Tester verifies integrated code<br/>Independent reviewer records and verifies finding beads"]
+    CHECK{"Controller runs quality gate after review<br/>Exact successful native manifest, item workflows and finalizers<br/>Current passing receipts; required findings resolved"}
+    RECON["Write reconciliation and pass execution/evidence gate<br/>Downstream pending; required test artifacts delivered<br/>Optional settlement preview/apply with advertised revision CAS<br/>Unsupported or conflicting bookkeeping stays explicit and pending"]
+    FINAL["OMG finalization and authorized local/push/PR handoff<br/>Single checked publication receipt<br/>No deployment or PR-approval claim"]
+    REPORT["Post-workflow-settlement architect report<br/>Success, partial, blocked and failed builds<br/>Assessed SHA; implemented vs reviewed vs published<br/>Pending source IDs/reasons; local-only publication blockers"]
     SHIP["Canonical remote Markdown revisions<br/>Existing Hindsight pipeline and receipts"]
+    RETRY{{"Human explicitly requests retry of settled failed build"}}
+    RETRYCHECK["Verify failed root, same rig and approval, no active attempt<br/>New operation/source/artifacts; preserve old report<br/>Repeated retry request returns its receipt"]
     TALK --> IR --> INITIAL --> REFINE
     EDIT --> REFINE
-    REFINE -->|"needs human"| NEED
-    NEED -->|"decision; reconcile against approved baseline"| REFINE
+    INITIAL -->|"human choice needed"| INTERRUPT
+    REFINE -->|"human choice needed"| INTERRUPT --> STOPDOC --> NEED
+    REFINE -->|"required findings exhaust budget or execution fails"| STOPDOC
+    NEED -->|"record answer; reconcile direction; authorize continuation"| RESUME --> REFINE
     REFINE -->|"both lenses pass exact revision"| QUEUE
+    QUEUE -.->|"final result mail and queued nudge"| TALK
     QUEUE --> SPECS --> ACCEPTED
     SPECS -->|"changes"| EDIT
     ACCEPTED -.->|"later, separate request"| START
-    START --> PREP --> INTENT --> NATIVE --> RECON --> FINAL --> REPORT
+    START --> PREP --> INTENT --> NATIVE --> DECOMP --> IMPL --> QUALITY --> CHECK
+    CHECK -->|"pass"| RECON --> FINAL --> REPORT
+    CHECK -->|"fail; budget remains, max 3 attempts"| QUALITY
+    CHECK -->|"exhausted"| REPORT
     PREP -->|"preparation fails"| PREPFAIL
     INTENT -->|"failed or lost acknowledgement"| RECOVER
     RECOVER -->|"yes, including closed or partial work"| BIND
@@ -71,17 +90,32 @@ flowchart TD
     RECOVER -->|"cannot prove absence"| INSPECT
     ABANDON -.->|"new explicit request"| START
     NATIVE -->|"failure or blocked"| REPORT
+    DECOMP -->|"failure"| REPORT
+    IMPL -->|"failure"| REPORT
     RECON -->|"required violation"| REPORT
     FINAL -->|"failure"| REPORT
     TALK -.->|"authored summary"| SHIP
     REFINE -.->|"drafts can publish repeatedly"| SHIP
     ACCEPTED -.-> SHIP
-    REPORT --> SHIP
+    REPORT -->|"report publication succeeds"| SHIP
+    REPORT -.->|"failed run; unchanged approval"| RETRY --> RETRYCHECK --> PREP
+    REPORT -.->|"requirements change"| EDIT
 ```
 
 Native formula checks repeat the complete refinement assignment, including both
-reviews, up to three automatic attempts. Exhaustion returns the unresolved issue
-to the human, not a false pass. Native scope teardown preserves reporting after
+reviews, up to three automatic attempts for ordinary required findings. A human
+decision instead interrupts the current work. `complete-step` bounds the enclosing
+check at the current attempt before closing the worker as failed, so the engine
+skips its remaining scope without spawning more review attempts. Immediate notices
+and final result notices go to the recorded originating conversation; separate mail
+and nudge receipts support retry without relaunch. A queued notice is not a read receipt.
+`resolve` archives the question and human answer, clears the active question and
+leaves drafts for an explicitly requested continuation. Interrupted operations stay
+interrupted even if the answer arrives before their teardown. Missing document
+types re-enable initial authoring during the next refinement, preserving partial
+drafts. Engine outcome and semantic operation result are separate: a native pass
+without passing reviews is incomplete, and human interruption is needs-human.
+Native scope teardown preserves reporting after
 build failure and after the root settles. A terminal build root therefore does
 not prove that its reporting assignment finished.
 
@@ -92,14 +126,41 @@ launcher and its children have exited. Store errors and concurrent record change
 prevent it. City launches with relocated graph stores require native storage
 inspection rather than inferring absence from an incomplete federated listing.
 
-Build preparation automatically provisions and caches a private validator runtime
-with pinned dependencies. Users do not select an interpreter or install validator
-packages. It also provides the legacy checker path used by nested official
-formulas. Its wrapper uses the managed runtime, sets the
-durable rig root and delegates to the installed native checker and schemas. The
-first workflow work step repeats preparation before the requirements adapter;
-direct launches and resumed setup follow the same path. Runtime artifact paths
-are absolute. This is a local-host compatibility measure for the first live trial.
+OMG owns the build methodology and worker prompts. The Gas City engine owns the
+graph, convoy drains, check attempts and scope settlement. Build checks use the
+same Bash/yq/jq/Python implementation as `gc omg verify`, resolved directly from pack
+assets. They install no runtime dependencies. Plans read original approved specs;
+private execution JSON records hold evidence. Specs carry an approved omg-delivery
+classification in their bodies, distinct from Hindsight frontmatter. Snapshot
+creation and build verification share its parser. Reclassification changes the
+approved bytes and requires fresh review/acceptance. Decomposition assigns only
+development obligations while retaining all downstream checks separately.
+Reconciliation has up to three checked attempts and requires development work,
+local-check evidence and required downstream test artifacts to be delivered.
+Downstream execution remains pending, not fabricated or treated as builder failure.
+CI/CD owns promotion and deployment outside this graph; its findings create new
+development work. Finalization checks the authorized local, direct-push or PR-open
+receipt once, without claiming PR approval or deployment. A failed scope still
+reports partial, deferred and blocked work. Workers share the target rig checkout;
+test and review evidence are tied to committed code revisions.
+
+The native drain leaves source tasks open. Quality requires exact successful
+manifest membership, matching successful item workflows and finalizers, finished
+item execution and passing receipts. Repair/test/review workers do not invoke the
+full quality gate prematurely; the controller runs it after review. Reconcile and
+finalize verify execution, not source closure.
+
+After reconciliation.json and passing reconcile verification, the reconciler may
+preview `gc omg settle` and apply only through its advertised revision-CAS check.
+This stays inside reconciliation, with no extra graph step. Apply probes the
+backend for `--if-revision` at run time; without it, apply returns unsupported/exit 2
+without mutation. Reports
+list pending source IDs and reasons separately from code quality. Other settlement
+conflicts and partial results remain explicit without a settlement or overall
+completion claim. No unconditional closure or `gc.source_bead_id` retrofit is
+allowed. Failed runs preserve source tasks and findings. The current no-push report
+path can block its reporting bead on publication requirements; a local report is
+not completed publication or Hindsight shipping.
 
 Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.

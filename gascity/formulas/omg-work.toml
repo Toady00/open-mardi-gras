@@ -1,0 +1,15 @@
+formula = "omg-work"
+description = "Implement one OMG convoy member with verification evidence."
+[requires]
+formula_compiler = ">=2.0.0"
+[[steps]]
+id = "work"
+title = "Implement and verify the work in {{convoy_id}}"
+description_file = "../assets/workflows/omg-build/work.md"
+metadata = { "omg.stage" = "work", "omg.convoy" = "{{convoy_id}}" }
+[steps.check]
+max_attempts = 3
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/verify.sh"
+timeout = "2m"

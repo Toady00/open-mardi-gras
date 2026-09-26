@@ -18,8 +18,17 @@ The schema-2 [pack manifest](pack.toml) declares `omg`, version `0.1.0`.
 | --- | --- |
 | [Product manager](agents/product-manager/prompt.template.md) | Product requirements, scope, decisions, and reviews. Writes documents, not implementation code. |
 | [Architect](agents/architect/prompt.template.md) | System designs, architectural decisions, and reviews. Writes documents, not implementation code. |
+| [Builder](agents/builder/prompt.template.md) | Implements tracked work and repairs findings in the target rig. |
+| [Tester](agents/tester/prompt.template.md) | Verifies integrated behavior with reproducible evidence. |
+| [Reviewer](agents/reviewer/prompt.template.md) | Independently reviews plans, code and required findings. |
 
-Both agents use tmux sessions and omit `scope`, allowing city and rig instances.
+PM and architect use tmux sessions and omit `scope`, allowing city and rig instances.
+The build workers use tmux and rig scope.
+Runtime session names use Gas City's per-session defaults. Keep friendly names
+on conversation `--alias` values rather than a fixed agent `tmux_alias`: a manual
+conversation and formula workers must be able to run from the same template at once.
+Worker startup nudges explicitly claim routed work with `gc hook --claim --json`
+and execute the claimed step, rather than beginning another discovery conversation.
 They share the [initiative workflow](skills/omg-initiative/SKILL.md), pinned
 [Archify](skills/archify/SKILL.md), and the
 [shared Hindsight context fragment](template-fragments/omg-hindsight.template.md).
@@ -27,10 +36,11 @@ They share the [initiative workflow](skills/omg-initiative/SKILL.md), pinned
 | Resource | Purpose |
 | --- | --- |
 | `gc omg initiative` | Revision records, conversation-facing approval state, and explicit workflow initiation |
-| `gc omg prepare-build` | Check local build prerequisites and prepare native validator compatibility |
+| `gc omg verify` | Check approved baselines, execution records, test evidence and review outcomes |
+| `gc omg settle` | Preview source-task bookkeeping; apply only with advertised revision CAS |
 | `omg-docs` | Initial PRD, HLD, necessary ADRs and specs, followed by shared refinement |
 | `omg-refine` | Whole-set assessment, successive revision and distinct product/technical cross-review |
-| `omg-build` | Official native planning/build/review continuation, spec reconciliation and post-settlement reporting |
+| `omg-build` / `omg-work` | OMG-owned planning, tracked implementation, testing, review, reconciliation and post-settlement reporting |
 
 Approval does not launch a build. After approving specs, the human separately
 requests initiation through the agent. See the [implementation decisions](docs/implementation-decisions.md)
@@ -54,25 +64,21 @@ in `gascity`, not at the parent repository root. A city-level import supports
 city instances and expands eligible agents across configured rigs; an explicit
 rig import with the same binding takes precedence for that rig.
 
-Run `gc import install` after configuration. OMG's manifest pins the official
-Gas City methodology pack. The city owns the separate Hindsight import and its
+Run `gc import install` after configuration. OMG has no methodology-pack import.
+The city owns the separate Hindsight import and its
 version selection; the example uses the inspected revision. This keeps the
 archivist at `hindsight.archivist`, outside OMG's namespace, and provides the
-`gc hindsight` commands. Build rigs also need the official role agents, as in
-the official pack's installation:
+`gc hindsight` commands. Configure the build rig normally:
 
 ```toml
 [[rigs]]
 name = "app"
 path = "/absolute/path/to/app"
 
-[rigs.imports.gc]
-source = "https://github.com/gastownhall/gascity-packs.git//gascity/roles"
-version = "sha:b43abe633283a7769346d32360ff747d561fa0a4"
 ```
 
-Native build routes use `gc.*`; the Hindsight read fragment uses the `hindsight`
-binding. Keep those dependency bindings. OMG's own binding can change; pass
+Build routes use OMG's own agents; the Hindsight read fragment uses the `hindsight`
+binding. OMG's own binding can change; pass
 `--binding <name>` when launching through the initiative command so its formula
 targets match. City-initiated documents stay in city `docs/initiatives/<id>`;
 rig-initiated documents use that rig's same relative directory. The city must be
@@ -81,12 +87,12 @@ explicitly for a city initiative's build. Starting one rig does not start others
 
 Runtime prerequisites are Gas City's formula compiler v2, scope teardown and
 `gc beads metadata-cas`, a working shared Beads store, Git, Python 3, Mike Farah's
-`yq`, and Node.js for Archify. Configure the provider and Hindsight bank in the
+`yq` v4, Bash, jq, shasum, and Node.js for Archify. Configure the provider and Hindsight bank in the
 consuming city. This pack does not start a custom controller or retainer.
 
-For a first live run, follow [the trial guide](docs/first-build.md). Build dependency
-setup is automatic when the agent starts a build. OMG provisions and caches its
-own validator environment, including pinned PyYAML, inside the city runtime tree.
+For a first live run, follow [the trial guide](docs/first-build.md). Build checks
+use Bash/yq/jq and Python's standard library and install no runtime dependencies.
+Python also runs the initiative ledger and source-task settlement command.
 
 ## Working through conversation
 
@@ -100,13 +106,20 @@ records and presents the relevant documents. Discuss changes or approve selected
 specs. The agent publishes accepted statuses separately. Say "Start the build for
 this initiative in app" when you want implementation to begin.
 
-`initiative start` first runs local build preparation. It installs a managed
-forwarding wrapper at the legacy path expected by nested official formulas and
-verifies its native Python/schema dependencies in OMG's automatically managed
-environment. First use downloads the pinned dependency; subsequent builds reuse it.
-Preparation failures leave the initiative available for another request, rather
-than creating an unresolved launch. A successful launch records the preparation
-receipt and supplies absolute runtime artifact paths.
+`initiative start` checks local tools and freezes the original approved Git blobs.
+It writes a baseline inventory and supplies an operation-specific absolute runtime
+artifact root. The architect reads those specs directly when planning. OMG owns
+the execution-record contract in the [build skill](skills/omg-build/SKILL.md).
+There is no requirements translation or official build-artifact schema dependency.
+
+The shared [development contract](skills/omg-development/SKILL.md) applies to app
+code and IaC. Specs explicitly classify implementation, development checks,
+downstream verification artifacts to deliver, and downstream checks to execute
+later. The classification lives in fenced `omg-delivery` YAML in the owning specs
+and is approved with their Git snapshot. Build records must match it exactly.
+CI/CD owns promotion/deployment; downstream failures create new work rather than
+holding development open. A local-only result, direct-branch push and opened PR
+are distinct handoffs; none proves PR approval, deployment or production acceptance.
 
 Commands are supporting tools for agents, not a required human interface. See
 [command help](commands/initiative/help.md) for the exact operations and recovery.
@@ -118,6 +131,9 @@ For a failed launch that created no workflow, `initiative abandon` records an
 operator-authorized abandoned attempt after the launcher has exited and an
 exact-store check finds no workflow evidence. A new explicit request can then
 retry. Closed/partial workflow evidence and store errors prevent abandonment.
+After an actual failed build settles, an explicit `start --retry <operation>`
+creates a separate attempt for the same approval. New approved revisions use a
+fresh normal start. Repeated retry requests deduplicate and old artifacts remain.
 City launches with relocated graph storage require native storage inspection;
 the current CLI cannot prove absence there with an exact-store list.
 
@@ -126,9 +142,34 @@ required finding or decision then returns to conversation. This bounds unattende
 cost without weakening requirements. A later resolved decision can start another
 refinement run. Human wait time consumes no authoring agent.
 
+A human decision interrupts authoring immediately rather than consuming the
+remaining review attempts. Workers finish through `initiative complete-step`,
+which ends the current check's retry budget and closes the work as failed; native
+scope dispatch skips the rest and retains the handoff. Ordinary required review
+findings still get bounded repair attempts. The engine's pass/fail is stored
+separately from the initiative operation's `result`, so a human interruption is
+shown as `needs-human` and a passed graph without passing document reviews is
+`incomplete`, not approval-ready.
+
+The initiating conversation is captured at launch. Decisions and final results
+send mail plus a queued nudge, prompting the PM to present the question or next
+action. Delivery errors and receipts remain visible on the initiative; `notify`
+retries delivery, and `watch --notify <session-id>` repairs or changes the return
+address. Human answers use `resolve` against the exact decision ID. Resolution
+does not restart execution or approve documents. After settlement, a requested
+`refine` fills missing initial documents before cross-reviewing the complete set.
+
+Older or untracked documents are reference candidates unless their current
+authority is established. Authors separate design decisions from external
+activation prerequisites. Useful Archify views are chosen by question, rather
+than defaulting to workflow charts; visual-check sidecars live under `.omg/`.
+
 Build reporting runs as native post-settlement work, including on failure. Its
 completion is separate from the build root's terminal status. Reports distinguish
 implemented, reviewed and actually published code against the pinned spec revision.
+The current no-push report path can remain blocked by report publication
+requirements. Preserve the local report and blocker, and describe code as
+local-only without claiming report completion or Hindsight shipping.
 
 ## Hindsight
 
@@ -181,33 +222,55 @@ Use the standard-library tests, with no extra test framework:
 python3 -m unittest discover -s test -p 'test_*.py' -v
 ```
 
-Set `GC_BASE_PACK` and `HINDSIGHT_PACK` to local checkout pack roots to also compile
-the formulas using the installed `gc` binary. Tests use temporary Git repositories,
-a local methodology dependency, and a sibling city-level Hindsight import. They
-also verify that the archivist resolves as `hindsight.archivist`. They do not
-start agents, publish documents, or write to a real memory bank.
+With `gc` installed, the tests also compile formulas and discover commands and
+agents in a temporary city with only OMG imported. They do not start agents,
+publish documents, or write to a real memory bank.
 
 The initial verification covers Git revision/readiness checks, separate approval
 and launch, guarded abandonment/retry, and native formula compilation. It also
 executes the refinement checker with a stubbed GC transport and no `yq` on PATH,
 and verifies that OMG's compiled check entry paths resolve to executable pack assets.
-Build preparation tests also invoke the real upstream validator from rig and
-worker directories with stubbed bead reads, proving valid artifacts pass and
-malformed artifacts fail. Native CLI probes cover command discovery, repeated
-preparation, and nested implementation/review/repair check-path resolution.
+Build tests run the shipped Bash checker with real Git/yq/jq and isolated bead
+reads. They cover altered baselines, missing requirement coverage, wrong convoy
+membership, failed or stale verification, unresolved findings and incomplete
+reconciliation, including changed HOME and restricted PATH.
+The development-boundary cases cover pending downstream evidence, required
+downstream test artifacts, local-check coverage, forbidden reclassification,
+and local/push/PR publication claims. Failed-build retry tests preserve prior
+attempts and reject live, successful, foreign or differently approved roots.
+Handoff tests cover exact-decision resolution, pre-snapshot human reviews,
+notification retries, concurrent state updates, authoring recovery and semantic
+results. A native-runtime test cooks the actual refinement formula into an
+isolated file store and runs Gas City's control transitions, proving that a
+human interruption skips remaining work without a second iteration and retains
+the final handoff.
 A live managed-city rehearsal is still required to establish end-to-end provider,
 controller, publication and Hindsight behavior in a consuming installation.
 
-The build formula extends `build-from-plan-base`. Gas City replaces whole steps
-on override, so scoped steps explicitly preserve the pinned native dependencies,
-routes, checks and drains. Their descriptions resolve from the dependency's asset
-layers. OMG check entry scripts resolve through those layers using `../assets/`
-paths. For native nested formulas that still name `.gc/scripts/checks/`, the
-preparation command explicitly installs the required forwarding wrapper. Both
-paths run the original checker with its own Python validator and schemas.
-The controller compares Git bytes for readiness; `yq` is needed for agent-side
-snapshot creation and accepted-document comparison. Review the overrides when
-updating the official pack pin.
+The standalone build formula uses Gas City's shared single-lane convoy drain for
+implementation and checked repair/test/review groups. Scope failure aborts remaining
+build work; teardown preserves the final report. Both command and formula checks
+execute the same shipped verify.sh through supported pack asset paths. The current
+workflow requires a shared local rig checkout. See the trial guide for migration
+from earlier wrappers and environments.
+
+The drain leaves implementation source tasks open. Quality validates the exact
+successful native manifest, item workflows and finalizers, plus current passing
+receipts. Repair/test/review workers complete their own steps; the controller runs
+the full quality gate after review. Reconcile and finalize gate execution evidence,
+not source-task closure.
+
+Within reconciliation, after reconciliation.json and passing reconcile verification,
+`gc omg settle --root <artifact-root> --city <city-path> --rig <rig-name>` previews
+source-task settlement without mutation. `--apply` checks for advertised
+`gc bd update --if-revision` support and integer source revisions before applying
+revision CAS. That run-time probe is authoritative: a backend that does not
+advertise it returns unsupported/exit 2 without mutation. Record pending source
+IDs and that reason separately from code
+quality. Other conflicts and partial closures also remain explicit, with no
+settlement or overall-completion claim. There is no unconditional-close fallback
+or `gc.source_bead_id` retrofit. Failed runs preserve tasks and findings. See the
+[build skill](skills/omg-build/SKILL.md#source-task-bookkeeping) for the procedure.
 
 ## Archify
 

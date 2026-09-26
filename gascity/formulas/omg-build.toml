@@ -1,10 +1,8 @@
 formula = "omg-build"
-description = "Explicitly requested build from pinned OMG specs, with native planning/build/review and post-settlement reporting."
-extends = ["build-from-plan-base"]
+description = "Build pinned approved specs with OMG planning, implementation, testing, review and post-settlement reporting."
 
 [requires]
 formula_compiler = ">=2.0.0"
-
 [vars.initiative]
 required = true
 [vars.operation]
@@ -15,165 +13,122 @@ default = "omg"
 required = true
 [vars.approved_revision]
 required = true
-
-[[steps]]
-id = "omg-prepare"
-title = "Prepare native validator compatibility and build prerequisites"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
-description_file = "../assets/workflows/omg-build/prepare.md"
-
-[[steps]]
-id = "omg-input"
-title = "Bridge pinned OMG specs into native planning inputs"
-needs = ["omg-prepare"]
-metadata = { "gc.run_target" = "{{omg_binding}}.architect", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.build.artifact_schema" = "gc.build.requirements.v1", "gc.build.artifact_path_keys" = "gc.build.requirements_path,gc.var.requirements_path" }
-description_file = "../assets/workflows/omg-build/input.md"
-[steps.check]
-max_attempts = 3
-[steps.check.check]
-mode = "exec"
-path = "../assets/scripts/checks/omg-build-artifact.sh"
-timeout = "5m"
-
-[[steps]]
-id = "prepare-plan"
-title = "Validate plan continuation inputs"
-needs = ["omg-input"]
-description_file = "../assets/workflows/build-from-plan-base/prepare-plan.md"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+[vars.artifact_root]
+required = true
+[vars.push]
+default = "false"
+enum = ["true", "false"]
+[vars.open_pr]
+default = "false"
+enum = ["true", "false"]
 
 [[steps]]
 id = "plan"
-title = "Produce implementation plan"
-needs = ["prepare-plan"]
-description_file = "../assets/workflows/build-from-plan-base/plan.md"
-metadata = { "gc.run_target" = "gc.design-author", "gc.build.artifact_schema" = "gc.build.plan.v1", "gc.build.artifact_path_keys" = "gc.build.plan_path,gc.var.plan_path", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+title = "Plan implementation directly from approved specs and review coverage"
+metadata = { "omg.stage" = "plan", "omg.artifact_root" = "{{artifact_root}}", "omg.initiative" = "{{initiative}}", "omg.operation" = "{{operation}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 [steps.check]
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/omg-build-artifact.sh"
-timeout = "5m"
-
-[[steps]]
-id = "plan-review"
-title = "Review implementation plan"
-needs = ["plan"]
-description_file = "../assets/workflows/build-from-plan-base/plan-review.md"
-metadata = { "gc.run_target" = "gc.review-synthesizer", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
-
-[[steps]]
-id = "prepare-decompose"
-title = "Validate decompose continuation inputs"
-needs = ["plan-review"]
-description_file = "../assets/workflows/build-from-plan-base/prepare-decompose.md"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+path = "../assets/scripts/verify.sh"
+timeout = "2m"
+[[steps.children]]
+id = "author-plan"
+title = "Write execution plan and requirement index"
+metadata = { "gc.run_target" = "{{omg_binding}}.architect" }
+description_file = "../assets/workflows/omg-build/plan.md"
+[[steps.children]]
+id = "review-plan"
+title = "Independently review plan against every approved requirement"
+needs = ["author-plan"]
+metadata = { "gc.run_target" = "{{omg_binding}}.reviewer" }
+description_file = "../assets/workflows/omg-build/plan-review.md"
 
 [[steps]]
 id = "decompose"
-title = "Create continuation implementation convoy"
-needs = ["prepare-decompose"]
-description_file = "../assets/workflows/build-from-decompose-base/decompose.md"
-metadata = { "gc.run_target" = "gc.task-decomposer", "gc.build.artifact_schema" = "gc.build.decomposition.v1", "gc.build.artifact_path_keys" = "gc.build.decomposition_path,gc.var.decomposition_path", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+title = "Create tracked implementation work and its convoy"
+needs = ["plan"]
+metadata = { "gc.run_target" = "{{omg_binding}}.architect", "omg.stage" = "decompose", "omg.artifact_root" = "{{artifact_root}}", "omg.initiative" = "{{initiative}}", "omg.operation" = "{{operation}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-build/decompose.md"
 [steps.check]
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/omg-build-artifact.sh"
-timeout = "5m"
-
-[[steps]]
-id = "prepare-convoy"
-title = "Validate implementation convoy"
-needs = ["decompose"]
-description_file = "../assets/workflows/build-from-decompose-base/prepare-convoy.md"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+path = "../assets/scripts/verify.sh"
+timeout = "2m"
 
 [[steps]]
 id = "implement"
-title = "Drain continuation implementation convoy"
-needs = ["prepare-convoy"]
-condition = "{{drain_policy}} == separate"
-description_file = "../assets/workflows/build-from-convoy-base/implement.md"
-metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
-[steps.drain]
-context = "separate"
-formula = "do-work"
-member_access = "exclusive"
-
-[[steps]]
-id = "implement-same-session"
-title = "Drain continuation convoy in one shared session"
-needs = ["prepare-convoy"]
-condition = "{{drain_policy}} == same-session"
-description_file = "../assets/workflows/build-from-convoy-base/implement-same-session.md"
-metadata = { "gc.run_target" = "{{implementation_target}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+title = "Implement and test each tracked work item"
+needs = ["decompose"]
+metadata = { "gc.run_target" = "{{omg_binding}}.builder", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 [steps.drain]
 context = "shared"
-formula = "do-work-item"
-on_item_failure = "skip_remaining"
+formula = "omg-work"
 member_access = "exclusive"
+on_item_failure = "skip_remaining"
 [steps.drain.item]
 single_lane = true
 
 [[steps]]
-id = "prepare-review"
-title = "Validate review continuation inputs"
-needs = ["implement", "implement-same-session"]
-description_file = "../assets/workflows/build-from-convoy-base/prepare-review.md"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
-
-[[steps]]
-id = "review"
-title = "Review continuation implementation"
-needs = ["prepare-review"]
-description_file = "../assets/workflows/build-from-review-base/review.md"
-metadata = { "gc.run_target" = "gc.implementation-reviewer", "gc.build.artifact_schema" = "gc.build.review.v1", "gc.build.artifact_path_keys" = "gc.build.review_report_path", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+id = "quality"
+title = "Repair findings, test the integrated change, and independently review"
+needs = ["implement"]
+metadata = { "omg.stage" = "quality", "omg.artifact_root" = "{{artifact_root}}", "omg.initiative" = "{{initiative}}", "omg.operation" = "{{operation}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 [steps.check]
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/omg-build-artifact.sh"
-timeout = "5m"
-
-[[steps]]
-id = "repair-review"
-title = "Repair or block continuation review findings"
-needs = ["review"]
-description_file = "../assets/workflows/build-from-review-base/repair-review.md"
-metadata = { "gc.run_target" = "gc.run-operator", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+path = "../assets/scripts/verify.sh"
+timeout = "2m"
+[[steps.children]]
+id = "repair"
+title = "Address required findings from the preceding attempt"
+metadata = { "gc.run_target" = "{{omg_binding}}.builder" }
+description_file = "../assets/workflows/omg-build/repair.md"
+[[steps.children]]
+id = "test"
+title = "Verify integrated behavior at the current code revision"
+needs = ["repair"]
+metadata = { "gc.run_target" = "{{omg_binding}}.tester" }
+description_file = "../assets/workflows/omg-build/test.md"
+[[steps.children]]
+id = "review"
+title = "Review code, test evidence, and required findings"
+needs = ["test"]
+metadata = { "gc.run_target" = "{{omg_binding}}.reviewer" }
+description_file = "../assets/workflows/omg-build/review.md"
 
 [[steps]]
 id = "omg-reconcile"
-title = "Reconcile implementation and verification against approved specs"
-needs = ["repair-review"]
-metadata = { "gc.run_target" = "{{omg_binding}}.architect", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+title = "Reconcile every approved requirement with verified implementation"
+needs = ["quality"]
+metadata = { "gc.run_target" = "{{omg_binding}}.architect", "omg.stage" = "reconcile", "omg.artifact_root" = "{{artifact_root}}", "omg.initiative" = "{{initiative}}", "omg.operation" = "{{operation}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 description_file = "../assets/workflows/omg-build/reconcile.md"
-
-[[steps]]
-id = "finalize"
-title = "Finalize continuation with spec reconciliation"
-needs = ["omg-reconcile"]
-metadata = { "gc.run_target" = "gc.run-operator", "gc.build.artifact_schema" = "gc.build.final-report.v1", "gc.build.artifact_path_keys" = "gc.build.final_report_path", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
-description_file = "../assets/workflows/omg-build/finalize.md"
 [steps.check]
 max_attempts = 3
 [steps.check.check]
 mode = "exec"
-path = "../assets/scripts/checks/omg-build-artifact.sh"
-timeout = "5m"
+path = "../assets/scripts/verify.sh"
+timeout = "2m"
 
 [[steps]]
-id = "publish"
-title = "Optionally publish continuation result"
-needs = ["finalize"]
-description_file = "../assets/workflows/build-from-review-base/publish.md"
-metadata = { "gc.run_target" = "gc.publisher", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+id = "finalize"
+title = "Record the verified revision and explicitly requested code publication"
+needs = ["omg-reconcile"]
+metadata = { "gc.run_target" = "{{omg_binding}}.builder", "omg.stage" = "finalize", "omg.artifact_root" = "{{artifact_root}}", "omg.initiative" = "{{initiative}}", "omg.operation" = "{{operation}}", "gc.scope_ref" = "omg-build-body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
+description_file = "../assets/workflows/omg-build/finalize.md"
+[steps.check]
+max_attempts = 1
+[steps.check.check]
+mode = "exec"
+path = "../assets/scripts/verify.sh"
+timeout = "2m"
 
 [[steps]]
 id = "omg-build-body"
-title = "Native build scope"
-needs = ["publish"]
+title = "OMG build scope"
+needs = ["finalize"]
 metadata = { "gc.kind" = "scope", "gc.scope_name" = "omg-build-body", "gc.scope_role" = "body" }
 
 [[steps]]

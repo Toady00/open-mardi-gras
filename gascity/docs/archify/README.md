@@ -264,10 +264,11 @@ deferred, and blocked outcomes, with supporting implementation and verification
 evidence. Every deviation needs a reason and its decision authority; describing
 an unapproved deviation does not retroactively approve it.
 
-The official build chain already summarizes implementation, reviews and repairs,
-finalizes, and publishes. `omg-build` now extends `build-from-plan-base`, adds spec
-reconciliation before finalization, and requires it in the native final report.
-Post-settlement reporting also covers failures before normal finalization.
+The current standalone `omg-build` formula owns planning, implementation, testing,
+review and reconciliation. Gas City schedules its post-settlement report even
+when the build fails before finalization. The original diagrams are proposal
+artifacts; the current executable flow is mapped in the repository-root
+`omg_flowchart.md` and generated HTML.
 
 The normal path in the workflow chart shows reconciliation before finalization
 and report publication. Partial, blocked, and failed outcomes also need a report.
@@ -290,8 +291,10 @@ code; it must not imply post-merge verification that never happened.
 - Spec approval does not launch implementation. A separate explicit human request
   records launch intent before native dispatch. Repeated starts reuse the saved
   operation; ambiguous acknowledgement requires native-state inspection/recovery.
-- `omg-build` bridges pinned specs to native requirements and implementation
-  planning. The architect authors the post-settlement report for every outcome.
+- `omg-build` plans directly from pinned specs using OMG-owned worker instructions
+  and Bash/yq/jq checks. The architect authors the post-settlement report for every
+  outcome. See [implementation decisions](../implementation-decisions.md) for the
+  September 14 replacement of the earlier official-pack integration.
 - Non-architecture comparison still uses before/after renders and authored change
   rationale. Known renderer defects remain as documented in the historical summary.
 

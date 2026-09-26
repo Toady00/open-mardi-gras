@@ -11,8 +11,10 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 
 
@@ -93,6 +95,7 @@ def snapshot_files(repo, directory, revision, kind, paths=None):
 
 def snapshot(repo, directory, revision, kind, paths=None):
     files = {}
+    specs = {}
     ids = set()
     types = set()
     requested = set(paths or [])
@@ -117,6 +120,8 @@ def snapshot(repo, directory, revision, kind, paths=None):
             ids.add(identity)
             types.add(fm["type"])
             item.update(id=identity, type=fm["type"], status=fm["status"])
+            if fm["type"] == "spec":
+                specs[path] = content
         files[path] = item
     if kind == "direction":
         if requested != set(files) or not requested:
@@ -128,6 +133,15 @@ def snapshot(repo, directory, revision, kind, paths=None):
     elif not {"discussion", "prd", "hld", "spec"} <= types:
         raise ValueError("document set requires discussion, PRD, HLD, and at least one spec")
     result = dict(revision=revision, files=files)
+    if kind != "direction":
+        # Parse the exact Git blobs being approved, never mutable working files.
+        with tempfile.TemporaryDirectory(prefix="omg-contract-") as tmp:
+            for path, content in specs.items():
+                target = Path(tmp, path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            result["delivery_contract"] = json.loads(run(
+                "bash", str(Path(__file__).with_name("delivery-contract.sh")), tmp, *specs))
     result["digest"] = hashlib.sha256(encoded(files).encode()).hexdigest()
     return result
 
@@ -267,6 +281,8 @@ def validate_reviews(state):
     snap = state.get("reviewed")
     if not snap:
         raise ValueError("no reviewed document snapshot")
+    if not snap.get("delivery_contract"):
+        raise ValueError("reviewed snapshot predates the delivery contract; refine and snapshot the classified specs")
     assert_current(state, snap)
     for role in ("product", "technical"):
         review = state.get("reviews", {}).get(role, {})
@@ -279,12 +295,247 @@ def validate_reviews(state):
     return snap
 
 
+def conversation(args, state):
+    # Worker sessions must not become the human-facing return address.
+    return (args.notify or
+            (os.environ.get("GC_SESSION_ID") if os.environ.get("GC_SESSION_ORIGIN") in {"manual", "named"} else None)
+            or state.get("conversation"))
+
+
+def active_operation(state, requested=None):
+    if requested:
+        op = state["operations"].get(requested)
+        if not op or op["phase"] not in {"launching", "launched"}:
+            raise ValueError("operation is not active; do not change state from an old assignment")
+        return requested
+    active = [key for key, op in state["operations"].items()
+              if op["phase"] in {"launching", "launched"}]
+    if len(active) > 1:
+        raise ValueError("--operation required when multiple operations are active")
+    return active[0] if active else None
+
+
+def notice(state, key, subject, body, operation=None):
+    target = state["operations"].get(operation, {}).get("conversation") or state.get("conversation")
+    state.setdefault("notifications", {}).setdefault(key, dict(
+        target=target, subject=subject, body=body, operation=operation, at=now()))
+
+
+def request_decision(state, args):
+    if not args.note or not args.note.strip():
+        raise ValueError("--note must state the question, options/recommendation, and why human input is needed")
+    operation = active_operation(state, args.operation)
+    pending = state.get("pending_decision")
+    if not pending:
+        pending = dict(id="decision-" + uuid.uuid4().hex, note=args.note,
+                       operation=operation, at=now())
+        state["pending_decision"] = pending
+    state.update(phase="needs-human", decision=pending["note"])
+    if operation:
+        state["operations"][operation]["interruption"] = dict(pending)
+    notice(state, pending["id"], f"{state['slug']}: decision needed",
+           f"Initiative {args.bead}, decision {pending['id']}.\n{pending['note']}\n"
+           "Present this question and recommendation to the human now. Read the current initiative "
+           "record first; if already resolved, do not ask it again. Record the answer with initiative "
+           "resolve, then explicitly resume document work after the old operation settles. "
+           "Do not approve specs or launch a build.", operation)
+
+
+def deliver_notices(ledger, bead):
+    """Durable, retryable mail + attention request. Never overwrite workflow progress.
+
+    Receipts suppress ordinary duplicate sends. A crash between an external send
+    and its receipt can repeat a notice; event IDs in subjects identify that case.
+    """
+    state, _ = ledger.load(bead)
+    for key in list(state.get("notifications", {})):
+        for channel in ("mail", "nudge"):
+            current, _ = ledger.load(bead)
+            item = current["notifications"][key]
+            if item.get(channel):
+                continue
+            target = item.get("target")
+            error = None
+            receipt = None
+            try:
+                if not target:
+                    raise ValueError("no conversation recorded; use initiative watch --notify <session-id>")
+                if channel == "mail":
+                    receipt = gc("mail", "send", target, "--city", ledger.city,
+                                 "-s", f"{item['subject']} [{key}]", "-m", item["body"])
+                else:
+                    receipt = gc("session", "nudge", target, item["body"],
+                                 "--delivery", "wait-idle", "--city", ledger.city)
+                if receipt.get("ok") is False:
+                    raise ValueError(encoded(receipt))
+            except (ValueError, OSError) as exc:
+                error = str(exc)
+            # Retry only the metadata merge after CAS contention, not the send.
+            for attempt in range(3):
+                current, previous = ledger.load(bead)
+                entry = current["notifications"][key]
+                if error:
+                    entry["error"] = error
+                else:
+                    entry[channel] = dict(receipt=receipt, at=now())
+                    entry.pop("error", None)
+                try:
+                    ledger.save(bead, previous, current)
+                    break
+                except ValueError:
+                    if attempt == 2:
+                        raise
+            if error:
+                print(f"omg initiative: notification {key} pending: {error}", file=sys.stderr)
+                break
+    return ledger.load(bead)[0]
+
+
+def missing_authoring(state):
+    kinds = set()
+    directory = Path(state["repo"], state["directory"])
+    for file in directory.rglob("*.md"):
+        if {"reports", "visuals"} & set(file.relative_to(directory).parts[:-1]):
+            continue
+        kinds.add(frontmatter(file.read_bytes()).get("type"))
+    return not {"discussion", "prd", "hld", "spec"} <= kinds
+
+
+def operation_bead(ledger, op, *args):
+    return gc("bd", "--city", ledger.city, *(["--rig", op["rig"]] if op["rig"] else []), *args)
+
+
+def operation_workflow(ledger, bead, operation, op, workflow_id):
+    """Read a native root and require it to be this operation's own workflow.
+
+    Shared by recover, settle and retry: every consumer must reject a bead that
+    merely carries this initiative/operation (an omg-work item root inside the
+    build does), a root of another formula, another store, or a root other than
+    the one already recorded for the operation.
+    """
+    if not isinstance(workflow_id, str) or not workflow_id.strip():
+        raise ValueError("--workflow required")
+    root = one(operation_bead(ledger, op, "show", workflow_id))
+    meta = root.get("metadata", {})
+    recorded = op.get("workflow") or (op.get("receipt") or {}).get("workflow_id")
+    if (meta.get("gc.kind") != "workflow" or meta.get("gc.formula_name") != op.get("formula")
+            or meta.get("gc.var.initiative") != bead
+            or meta.get("gc.var.operation") != operation
+            or (op.get("rig") and meta.get("gc.root_store_ref") != "rig:" + op["rig"])
+            or (recorded and recorded != root["id"])):
+        raise ValueError("workflow does not match the recorded operation")
+    return root, meta
+
+
+def latest_attempt(attempts):
+    """Follow retry_of links from the live root; key order is not chronological.
+
+    Operations are stored with sorted keys and retry keys carry random UUIDs,
+    so neither insertion nor key order identifies the newest attempt. Returns
+    None when no live attempt exists; a fork is reported, never guessed.
+    """
+    live = {key: op for key, op in attempts.items() if op["phase"] != "abandoned"}
+    heads = [key for key, op in live.items() if op.get("retry_of") not in live]
+    if not live:
+        return None
+    if len(heads) != 1:
+        raise ValueError("ambiguous build attempt history for this approval; inspect the initiative record")
+    current = heads[0]
+    for _ in range(len(live)):
+        successors = [key for key, op in live.items() if op.get("retry_of") == current]
+        if not successors:
+            return current
+        if len(successors) > 1:
+            raise ValueError("ambiguous build attempt history for this approval; inspect the initiative record")
+        current = successors[0]
+    raise ValueError("ambiguous build attempt history for this approval; inspect the initiative record")
+
+
+def persist_baseline(artifact_root, baseline):
+    """Create the immutable operation baseline exactly once.
+
+    Called only after the launch intent won the metadata CAS, so a losing
+    concurrent caller never writes here. An identical existing file is the
+    same intent replayed; a different one is never overwritten.
+    """
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    target = artifact_root / "baseline.json"
+    content = encoded(baseline)
+    fd, temporary = tempfile.mkstemp(dir=artifact_root, prefix=".baseline-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            if target.read_text() != content:
+                raise ValueError("artifact root already holds a different baseline; "
+                                 "inspect it before launching this operation")
+    finally:
+        os.unlink(temporary)
+
+
+def finish_step(ledger, state, args):
+    if not args.operation or not args.step:
+        raise ValueError("complete-step requires --operation and --step")
+    op = state["operations"].get(args.operation)
+    if not op or op["phase"] not in {"launching", "launched"} or op["kind"] not in {"generate", "refine"}:
+        raise ValueError("complete-step requires an active document operation")
+    step = one(operation_bead(ledger, op, "show", args.step))
+    meta = step.get("metadata", {})
+    root = one(operation_bead(ledger, op, "show", meta.get("gc.root_bead_id", "")))
+    root_meta = root.get("metadata", {})
+    if (root_meta.get("gc.var.initiative") != args.bead
+            or root_meta.get("gc.var.operation") != args.operation
+            or meta.get("gc.kind") not in {None, "", "task"}
+            or meta.get("gc.scope_role") not in {"setup", "member"}):
+        raise ValueError("step is not ordinary scoped work for this document operation")
+    if step["status"] == "closed":
+        return  # Retrying after a lost close response is harmless.
+    if step["status"] != "in_progress":
+        raise ValueError("claim the step before completing it")
+    pending = op.get("interruption") or state.get("pending_decision")
+    human = bool(pending or state.get("phase") == "needs-human")
+    if human and meta.get("gc.ralph_step_id"):
+        # The current engine retries a failed scope even when failure_class is
+        # hard. End this operation's authored retry budget before closing the
+        # subject; native scope/control dispatch still owns all graph closure.
+        attempt = int(meta.get("gc.attempt", "0"))
+        members = operation_bead(ledger, op, "query",
+                                 "metadata.gc.root_bead_id=" + root["id"], "--limit", "0")
+        controls = [row for row in members if row.get("metadata", {}).get("gc.kind") == "ralph"
+                    and row["metadata"].get("gc.step_id") == meta["gc.ralph_step_id"]]
+        if len(controls) != 1 or attempt < 1:
+            raise ValueError("cannot identify the enclosing document check and attempt")
+        control = controls[0]
+        if control.get("status") == "closed":
+            raise ValueError("enclosing document check is already closed")
+        budget = min(attempt, int(control["metadata"]["gc.max_attempts"]))
+        if budget < 1:
+            raise ValueError("invalid enclosing document check budget")
+        operation_bead(ledger, op, "update", control["id"],
+                       "--set-metadata", f"gc.max_attempts={budget}")
+    outcome = "fail" if human else args.outcome
+    fields = {"gc.outcome": outcome, "omg.outcome": "needs-human" if human else outcome}
+    if outcome == "fail":
+        fields.update({"gc.failure_class": "hard", "gc.failure_reason":
+                       "needs-human" if human else (args.note or "document step failed")})
+    if pending:
+        fields["omg.decision"] = pending["id"]
+    flags = [value for key, val in fields.items() for value in ("--set-metadata", f"{key}={val}")]
+    operation_bead(ledger, op, "update", args.step, *flags)
+    operation_bead(ledger, op, "close", args.step, "--reason", fields["omg.outcome"])
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=["init", "list", "show", "direction", "snapshot",
                                      "review", "ready", "decision", "revise", "accept",
                                      "materialize", "generate", "refine", "start",
-                                     "recover", "abandon", "settle", "check"])
+                                     "recover", "abandon", "settle", "check", "resolve",
+                                     "watch", "notify", "complete-step"])
     p.add_argument("bead", nargs="?")
     p.add_argument("--slug")
     p.add_argument("--title")
@@ -300,11 +551,18 @@ def main(argv=None):
     p.add_argument("--note")
     p.add_argument("--workflow")
     p.add_argument("--operation")
+    p.add_argument("--decision", dest="decision_id")
+    p.add_argument("--notify", help="originating conversation session ID or alias")
+    p.add_argument("--step", help="claimed document work bead, never a control bead")
+    p.add_argument("--outcome", choices=["pass", "fail"], default="pass")
     p.add_argument("--launcher-stopped", action="store_true",
                    help="confirm the original launcher and its child processes have exited")
     p.add_argument("--binding", default="omg")
-    p.add_argument("--push", choices=["true", "false"], default="false")
-    p.add_argument("--open-pr", choices=["true", "false"], default="false")
+    p.add_argument("--push", choices=["true", "false"],
+                   help="new start: default false; retry: must equal the prior authorization")
+    p.add_argument("--open-pr", choices=["true", "false"],
+                   help="new start: default false; retry: must equal the prior authorization")
+    p.add_argument("--retry", help="explicitly retry this settled failed build operation")
     args = p.parse_args(argv)
     ledger = Ledger(args.city)
     if args.action == "init":
@@ -324,7 +582,8 @@ def main(argv=None):
         identity = hashlib.sha256(f"{repo}/{directory}".encode()).hexdigest()[:20]
         bead = f"{prefix}-omg{identity}"
         state = dict(schema=1, repo=repo, rig=rig, directory=directory,
-                     slug=args.slug, phase="discussion", directions=[], operations={}, reviews={})
+                      slug=args.slug, phase="discussion", directions=[], operations={}, reviews={})
+        state["conversation"] = conversation(args, state)
         result = one(ledger.bd("create", args.title or args.slug, "--id", bead,
                               "--status", "pinned", "--labels", "omg:initiative",
                               "--description", "Conversational initiative record; not dispatchable work.",
@@ -332,23 +591,39 @@ def main(argv=None):
         print(encoded(result))
         return
     if args.action == "list":
-        rows = ledger.bd("list", "--all", "--limit", "0", "--label", "omg:initiative")
+        rows = ledger.bd("list", "--all", "--limit", "0", "--long", "--label", "omg:initiative")
         result = []
         for row in rows:
             state = json.loads(row["metadata"][KEY])
             result.append(dict(bead=row["id"], title=row["title"], phase=state["phase"],
                                repo=state["repo"], directory=state["directory"],
-                               reviewed=state.get("reviewed", {}).get("revision"),
-                               decision=state.get("decision")))
+                                reviewed=state.get("reviewed", {}).get("revision"),
+                                decision=(state.get("pending_decision") or state.get("decision")) if state["phase"] == "needs-human" else None,
+                                operations={key: {field: op.get(field) for field in ("phase", "result", "outcome", "workflow")}
+                                            for key, op in state["operations"].items()},
+                                notifications=state.get("notifications", {})))
         print(encoded(result))
         return
     if not args.bead:
         raise ValueError("initiative bead ID required")
     state, old = ledger.load(args.bead)
     action = args.action
+    if args.retry and action != "start":
+        raise ValueError("--retry is only valid with start")
     if action == "show":
         print(encoded(state))
         return
+    if action == "notify":
+        print(encoded(deliver_notices(ledger, args.bead)))
+        return
+    if action == "complete-step":
+        finish_step(ledger, state, args)
+        print(encoded(dict(step=args.step, completed=True)))
+        return
+    if args.operation and action in {"revise", "snapshot", "review", "ready"}:
+        active_operation(state, args.operation)
+    if state.get("phase") == "needs-human" and action in {"direction", "revise", "snapshot", "generate", "refine", "start"}:
+        raise ValueError("resolve the recorded human decision before revising, approving direction or launching work")
     if action == "direction":
         approval = authority(args)
         snap = snapshot(state["repo"], state["directory"], args.revision or "", "direction", args.file)
@@ -364,14 +639,22 @@ def main(argv=None):
             raise ValueError("approve direction before reviewing documents")
         snap = snapshot(state["repo"], state["directory"], args.revision or "", "docs")
         assert_current(state, snap)
-        state.update(reviewed=snap, reviews={}, phase="refining")
+        state.update(reviewed=snap, reviewed_operation=active_operation(state, args.operation),
+                     reviews={}, phase="refining")
     elif action == "review":
         if not args.role or not args.verdict or not args.artifact:
             raise ValueError("--role, --verdict, and persisted --artifact are required")
         snap = state.get("reviewed")
-        if not snap:
+        if not snap and args.verdict != "human":
             raise ValueError("snapshot the whole document set first")
-        assert_current(state, snap)
+        if snap:
+            if args.verdict == "human":
+                try:
+                    assert_current(state, snap)
+                except ValueError:
+                    snap = None  # A human interruption does not certify stale document bytes.
+            else:
+                assert_current(state, snap)
         artifact = Path(args.artifact).resolve(strict=True)
         # Review evidence is deliberately not an eligible authored document.
         if Path(state["repo"], "docs") in artifact.parents:
@@ -379,12 +662,13 @@ def main(argv=None):
         state["reviews"][args.role] = dict(
             verdict=args.verdict, artifact=str(artifact),
             artifact_sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(),
-            digest=snap["digest"], direction=state["direction"]["digest"], at=now())
+            digest=snap["digest"] if snap else None, direction=state["direction"]["digest"], at=now())
+        if args.verdict == "human":
+            request_decision(state, args)
     elif action in {"ready", "check"}:
         if state.get("phase") == "needs-human":
             if action == "check":
-                print(encoded(dict(outcome="human", note=state.get("decision"))))
-                return
+                raise ValueError("needs-human: " + state.get("decision", "decision required"))
             raise ValueError("unresolved human decision; cannot mark approval-ready")
         validate_reviews(state)
         if action == "check":
@@ -392,9 +676,29 @@ def main(argv=None):
             return
         state["phase"] = "approval-ready"
     elif action == "decision":
-        if not args.note:
-            raise ValueError("--note must explain the unresolved decision")
-        state.update(phase="needs-human", decision=args.note)
+        request_decision(state, args)
+    elif action == "resolve":
+        evidence = authority(args)
+        if state.get("phase") != "needs-human" or not args.note or not args.note.strip():
+            raise ValueError("resolve requires an outstanding decision and --note with the human's answer")
+        pending = state.get("pending_decision") or dict(id="legacy", note=state.get("decision"), at=None)
+        if args.decision_id != pending["id"]:
+            raise ValueError(f"resolve the current --decision {pending['id']}; do not resolve a stale question")
+        state.setdefault("decisions", []).append(dict(pending, resolution=args.note, authority=evidence, resolved_at=now()))
+        state.pop("pending_decision", None)
+        state.pop("decision", None)
+        state.update(phase="draft", reviews={})
+    elif action == "watch":
+        target = conversation(args, state)
+        if not target:
+            raise ValueError("watch requires --notify or a managed manual session")
+        state["conversation"] = target
+        for op in state["operations"].values():
+            if op["phase"] in {"launching", "launched"}:
+                op["conversation"] = target
+        for item in state.get("notifications", {}).values():
+            if not item.get("nudge"):
+                item["target"] = target
     elif action == "accept":
         approval = authority(args)
         if state["phase"] != "approval-ready":
@@ -437,12 +741,42 @@ def main(argv=None):
             # Repeated requests for this rig and accepted revision reuse the
             # recorded operation, including failed or interrupted launches.
             key = "build-" + rig + "-" + snap["digest"]
+            # A new start authorizes only what was said: absent flags mean no
+            # code publication. A retry keeps the prior attempt's authorization;
+            # a different one is a separate request, never granted by a retry.
+            publication = dict(push=args.push == "true", open_pr=args.open_pr == "true")
+            if args.retry:
+                prior = state["operations"].get(args.retry)
+                if (not prior or prior.get("kind") != "start" or prior.get("phase") != "settled"
+                        or prior.get("rig") != rig or prior.get("approved", {}).get("digest") != snap["digest"]):
+                    raise ValueError("--retry requires a settled build for this rig and approved snapshot; changed approval uses a fresh start")
+                publication = dict(prior.get("publication") or {})
+                if set(publication) != {"push", "open_pr"} or not all(isinstance(v, bool) for v in publication.values()):
+                    raise ValueError("the settled build has no recorded publication authorization to retry")
+                for flag, value in (("push", args.push), ("open_pr", args.open_pr)):
+                    if value is not None and (value == "true") != publication[flag]:
+                        raise ValueError(f"retry keeps the prior publication authorization ({flag}={str(publication[flag]).lower()}); "
+                                         "a different publication is a separate request, not a retry")
+                root, meta = operation_workflow(ledger, args.bead, args.retry, prior,
+                                                prior.get("workflow") or (prior.get("receipt") or {}).get("workflow_id"))
+                if root.get("status") != "closed" or meta.get("gc.outcome") != "fail":
+                    raise ValueError("retry requires the matching terminal failed native workflow")
             attempts = {k: o for k, o in state["operations"].items()
                         if k == key or k.startswith(key + "-retry-")}
-            for attempt in attempts.values():
-                if attempt["phase"] != "abandoned":
-                    print(encoded(attempt))
+            latest = latest_attempt(attempts)
+            if args.retry:
+                existing = [k for k, o in attempts.items()
+                            if o.get("retry_of") == args.retry and o["phase"] != "abandoned"]
+                if len(existing) > 1:
+                    raise ValueError("ambiguous build attempt history for this approval; inspect the initiative record")
+                if existing:
+                    print(encoded(state["operations"][existing[0]]))
                     return
+                if latest and state["operations"][latest]["phase"] != "settled":
+                    raise ValueError("another build attempt for this approval is still active or launch-unresolved")
+            elif latest:
+                print(encoded(state["operations"][latest]))
+                return
             if attempts:
                 key += "-retry-" + uuid.uuid4().hex
         else:
@@ -451,34 +785,55 @@ def main(argv=None):
             print(encoded(state["operations"][key]))
             return
         if action == "start":
-            preparation = gc(args.binding, "prepare-build", "--rig", rig, "--binding", args.binding)
-            if preparation.get("ready") is not True or not Path(preparation.get("rig_root", "")).is_absolute():
-                raise ValueError("build preparation did not confirm a ready rig")
+            for tool in ("bash", "jq", "yq", "git", "shasum"):
+                if not shutil.which(tool):
+                    raise ValueError(f"build verification requires {tool} on PATH")
+            inputs = materialize(state, snap, args.bead)
+            artifact_root = Path(ledger.rigs[rig]).resolve() / ".omg" / "builds" / args.bead / key
+            baseline = dict(initiative=args.bead, operation=key, revision=snap["revision"],
+                            digest=snap["digest"], approved_root=inputs, files=snap["files"],
+                            binding=args.binding, city=ledger.city,
+                            repo=str(Path(ledger.rigs[rig]).resolve()),
+                            publication=publication)
         formula = {"generate": "omg-docs", "refine": "omg-refine", "start": "omg-build"}[action]
-        op = dict(kind=action, phase="launching", formula=formula, rig=rig, authority=intent)
+        target_conversation = conversation(args, state)
+        if target_conversation:
+            state["conversation"] = target_conversation
+        op = dict(kind=action, phase="launching", formula=formula, rig=rig, authority=intent,
+                  conversation=target_conversation)
+        if action != "start":
+            op["initial"] = action == "generate" or missing_authoring(state)
         if action == "start":
+            if args.retry:
+                op["retry_of"] = args.retry
+            op["publication"] = baseline["publication"]
             op["approved"] = dict(revision=snap["revision"], digest=snap["digest"],
                                   direction=state["accepted"]["direction"]["digest"])
-            op["preparation"] = preparation
+            op["artifact_root"] = str(artifact_root)
+            op["repo"] = baseline["repo"]
+            op["approved_root"] = inputs
         state["operations"][key] = op
         if action != "start":
             state.update(phase="draft", reviews={})
         old = ledger.save(args.bead, old, state)  # durable intent BEFORE dispatch
-        vars_ = dict(initiative=args.bead, operation=key, omg_binding=args.binding)
         if action == "start":
-            inputs = materialize(state, snap, args.bead)
-            artifact_root = str(Path(preparation["rig_root"]) / ".omg" / "builds" / args.bead / snap["digest"])
+            # Only the CAS winner reaches this point; a failure here leaves the
+            # recorded launching operation for recovery or abandonment.
+            persist_baseline(artifact_root, baseline)
+        vars_ = dict(initiative=args.bead, operation=key, omg_binding=args.binding)
+        if action != "start":
+            vars_["initial"] = "true" if op["initial"] else "false"
+        if action == "start":
             vars_.update(approved_root=inputs, approved_revision=snap["revision"],
-                         artifact_root=artifact_root,
-                         requirements_path=str(Path(artifact_root) / "requirements.md"),
-                         push=args.push, open_pr=args.open_pr)
+                         artifact_root=str(artifact_root),
+                         push=str(publication["push"]).lower(), open_pr=str(publication["open_pr"]).lower())
             # Native drain continuations need a source bead. Its creation is
             # covered by the already persisted launch intent.
             source = one(gc("bd", "--rig", rig, "create", f"Build {state['slug']}",
                             "--description", f"Explicit launch for {args.bead}, revision {snap['revision']}."))
             op["source"] = source["id"]
             old = ledger.save(args.bead, old, state)
-            command = ["sling", "--rig", rig, "gc.run-operator", source["id"], "--on", formula]
+            command = ["sling", "--rig", rig, f"{args.binding}.architect", source["id"], "--on", formula]
         else:
             target = f"{args.binding}.product-manager"
             if rig:
@@ -495,7 +850,7 @@ def main(argv=None):
         if existing["phase"] == "settled":
             existing["receipt"] = result
         else:
-            state["operations"][key] = op
+            existing.update(phase="launched", receipt=result)  # preserve early decisions/notifications
     elif action == "abandon":
         evidence = authority(args)
         op = state["operations"].get(args.operation)
@@ -517,25 +872,43 @@ def main(argv=None):
             raise ValueError("--operation and an existing --workflow are required")
         if op["phase"] == "abandoned":
             raise ValueError("abandoned operation has unexpected workflow evidence; inspect before recovery")
-        root = one(gc("bd", "show", args.workflow))
-        meta = root.get("metadata", {})
-        if (meta.get("gc.kind") != "workflow" or meta.get("gc.formula_name") != op["formula"]
-                or meta.get("gc.var.initiative") != args.bead
-                or meta.get("gc.var.operation") != args.operation
-                or (op["rig"] and meta.get("gc.root_store_ref") != "rig:" + op["rig"])):
-            raise ValueError("workflow does not match the saved launch intent")
+        root, meta = operation_workflow(ledger, args.bead, args.operation, op, args.workflow)
         op.update(phase="launched", receipt=dict(workflow_id=root["id"]), recovered=authority(args))
     elif action == "settle":
         op = state["operations"].get(args.operation)
         if not op or not args.workflow:
             raise ValueError("--operation and --workflow required")
-        root = one(gc("bd", "show", args.workflow))
-        meta = root.get("metadata", {})
-        if (root.get("status") != "closed" or meta.get("gc.var.initiative") != args.bead
-                or meta.get("gc.var.operation") != args.operation):
-            raise ValueError("workflow has not settled or belongs to another operation")
-        op.update(phase="settled", workflow=root["id"], outcome=meta.get("gc.outcome", "unknown"))
+        if op["phase"] == "abandoned":
+            raise ValueError("an abandoned operation has no workflow to settle; recover it first if evidence exists")
+        root, meta = operation_workflow(ledger, args.bead, args.operation, op, args.workflow)
+        if root.get("status") != "closed":
+            raise ValueError("workflow has not settled")
+        engine_outcome = meta.get("gc.outcome", "unknown")
+        if "result" not in op:
+            if op.get("interruption") or state.get("phase") == "needs-human":
+                result = "needs-human"
+            elif op["kind"] in {"generate", "refine"}:
+                try:
+                    if state.get("reviewed_operation") != args.operation:
+                        raise ValueError("snapshot belongs to another operation")
+                    validate_reviews(state)
+                    result = "approval-ready" if engine_outcome == "pass" else "failed"
+                except (ValueError, OSError, KeyError):
+                    result = "incomplete" if engine_outcome == "pass" else "failed"
+            else:
+                result = "development-verified" if engine_outcome == "pass" else "failed"
+            op["result"] = result
+        op.update(phase="settled", workflow=root["id"], outcome=engine_outcome)
+        note = (op.get("interruption") or {}).get("note") or state.get("decision", "")
+        notice(state, "settled-" + args.operation, f"{state['slug']}: {op['result']}",
+               f"Initiative {args.bead}, operation {args.operation}, workflow {root['id']}: {op['result']}.\n"
+               f"Engine outcome: {engine_outcome}; this alone is not document approval.\n{note}\n"
+               "Read the current initiative state and present the result and next action to the human. "
+               "If a newer operation or resolution supersedes this notice, summarize that instead. "
+               "Do not infer spec approval or build authorization.", args.operation)
     ledger.save(args.bead, old, state)
+    if action in {"decision", "review", "settle", "watch"}:
+        state = deliver_notices(ledger, args.bead)
     print(encoded(state))
 
 

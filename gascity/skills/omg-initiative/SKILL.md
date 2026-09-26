@@ -15,6 +15,10 @@ Use `gc <binding> initiative` to persist decisions between sessions. The default
 binding is `omg`; resolve the installed binding rather than assume agent addresses.
 `initiative list` lists durable city-wide records; `show <bead>` returns one.
 Records are pinned, unrouted Beads entries. They are not work awaiting an agent.
+The command records the originating managed manual or named session at init/launch.
+Outside that context pass `--notify <conversation-session-id>`. Use `initiative
+watch <bead> --notify <session-id>` when moving the conversation to another session.
+Never use an ephemeral worker as the return address.
 
 Start with `initiative init --slug <id> --title <title>`. A managed rig agent uses
 its rig, a city agent uses the city. `--rig <name>` selects explicitly; `--rig ''`
@@ -23,10 +27,23 @@ root. Preserve this location when another agent/session resumes. Shared-city
 records let either role find pending initiatives across rigs.
 
 Create one living `discussion.md`, updated alongside JSON IR and rendered HTML.
-Use Archify from this pack. Ask what an agent given only the diagram would build.
+Use Archify from this pack. Choose useful architecture, workflow, sequence,
+dataflow or lifecycle views for the initiative; do not default every question to
+a workflow diagram or create redundant views. Ask what an agent given only the diagram would build.
 Check topology, containment, abstraction, authority and loop meanings. Shared
 refinement contains cross-review. Prose cannot repair contradictory topology.
 Correct IR and regenerate HTML before presenting it.
+Keep JSON/HTML pairs under `visuals/`. Run visual checks on an exact copy of the
+delivered HTML under `.omg/` so screenshots and diagnostic sidecars stay out of
+the authored docs tree. Do not stash unrelated work or edit repository AGENTS.md
+to work around a workflow error; record the error on the work bead or under `.omg/`.
+
+Git provenance is not human acceptance. Older, archived or untracked documents
+are reference candidates unless the human establishes their authority for this
+initiative. Read the recorded resolutions before raising an already-settled issue.
+Investigate discoverable facts before asking a human to supply them. Distinguish
+specification decisions from deployment identifiers and external activation
+prerequisites. Propose an explicit boundary instead of silently expanding scope.
 
 Use `gc mail send <target> -s <subject> -m <message>` for lightweight clarification.
 For substantive delegated review, create a work bead with exact artifact paths,
@@ -72,11 +89,22 @@ and invalidates readiness. Reconcile affected docs through shared refinement.
 
 ## Authoring and shared refinement
 
+Load the `omg-development` skill before authoring or reviewing the document set.
+It defines the shared application/IaC completion boundary and the approved
+classification of requirements and acceptance criteria. Specs carry its
+`omg-delivery` blocks; snapshot creation validates their exact committed content.
+Refinement reconciles prose, ACs and classifications together. A classification
+change is substantive and requires review and human acceptance before build.
+
 After direction approval, invoke `generate <bead> --authority '<request>'` once.
 For subsequent edits, invoke `refine <bead> --authority '<request>'`. These launch
 native `omg-docs` and `omg-refine`. The first extends the second with initial
 generation enabled. PM writes PRD, architect writes HLD/needed ADRs, then they
 write specs successively. Both initial and later sets enter the SAME refinement.
+After interrupted initial authoring, `refine` detects missing discussion/PRD/HLD/spec
+types and includes the initial authoring steps to fill gaps and reconcile partial
+drafts before review. It preserves existing content and stable IDs. Do not repeat
+`generate` or manufacture a complete snapshot from incomplete documents.
 
 Inside refinement, PM assesses whole-set product impact and revises affected
 content, architect assesses technical impact and revises successively, then
@@ -92,10 +120,77 @@ until refinement passes. Even unnoticed file changes are rejected by readiness
 checks. Presentation-only changes may keep semantic approval only when explicitly
 identified as such, but regenerate changed visual evidence before its approval.
 
-Record an unresolved decision with `decision <bead> --note ...`; never keep an
-authoring session busy awaiting the human. Formula handoff persists the outcome.
-When the human returns, retrieve it and resume discussion. A human can review
-several initiatives and accept selected exact revisions separately.
+## Document-step protocol and human handoff
+
+For every ordinary `omg-docs`/`omg-refine` assignment:
+
+1. Claim with `gc hook --claim --json`. Read the claimed bead, workflow root and
+   initiative. Obtain the operation from the root's `gc.var.operation`. If that
+   operation has an `interruption`, or the initiative is `needs-human`, skip
+   further investigation/writing and go directly to step 4. A later human answer
+   does not revive steps already interrupted in the old run.
+2. Execute the assigned authoring/review work. Pass `--operation <operation>` to
+   state-changing initiative commands. Ordinary required review findings belong
+   in `review --verdict required`; the engine repeats revisions and both reviews.
+3. If a human choice is actually necessary, run:
+
+   ```sh
+   gc omg initiative decision <initiative> --operation <operation> \
+     --note '<specific question; evidence; options; recommendation; what it blocks>'
+   ```
+
+   A reviewer can instead use `review --verdict human --note ... --artifact ...`.
+   Human review evidence can be recorded before a complete snapshot exists; it
+   never counts as a passing review. The command records an identified pending
+   decision, interrupts the operation and immediately sends mail plus a queued
+   nudge to the originating conversation. Preserve an existing pending question
+   rather than replacing it with each worker's restatement.
+4. Finish ordinary work using:
+
+   ```sh
+   gc omg initiative complete-step <initiative> --operation <operation> --step <claimed-bead>
+   ```
+
+   For execution errors add `--outcome fail --note '<diagnostics>'`. This command
+   derives human interruption from durable state and writes native failure before
+   closing the step. Gas City aborts the current scope and preserves teardown.
+   For human interruption inside a checked iteration, the command first limits
+   the enclosing check's retry budget to the current attempt. The installed
+   engine otherwise retries failed scopes even with a hard-failure marker.
+   A completed `required` review keeps the ordinary bounded repair budget.
+   Do not independently close blocked work as
+   a passing no-op. Do not close control beads or the workflow root.
+
+In the originating conversation, a decision notice means **present the question
+and recommendation to the human in this turn**. Do not end with only "I'll check"
+or a promise to contact another worker. Mail/nudge receipts establish dispatch,
+not that the human read the message. Inspect `notifications` and use `initiative
+notify <bead>` to retry failed delivery; do not restart the workflow to resend it.
+
+Record the human's answer against the exact pending ID:
+
+```sh
+gc omg initiative resolve <initiative> --decision <decision-id> \
+  --note '<answer and scope consequences>' --authority '<human message reference>'
+```
+
+For an older `needs-human` record without a pending ID, use `--decision legacy`.
+Resolution archives the question/answer and clears the active question. It does
+not approve direction/specs, edit documents, or restart execution. Reconcile the
+discussion and affected IR; obtain new direction approval if the design changed.
+Once the interrupted operation settles, use `refine --authority ...` for the
+human-authorized continuation. `revise`, `snapshot`, and new launches cannot
+silently clear a human gate. `show` exposes the exact state; `list` summarizes it.
+
+Settlement records separate engine `outcome` and semantic `result` values such as
+`needs-human`, `approval-ready`, `incomplete`, or `failed`. A finished graph is not
+proof that the documents are ready. The final handoff notifies the conversation
+with the result and next action; it cannot overwrite a newer decision or resolution.
+
+Example: a missing backup destination first calls for source investigation. If
+the real choice is whether backup provisioning belongs in this delivery, present
+that scope choice and the proposed activation prerequisite. Record the answer,
+revise the boundary and acceptance evidence, then repeat whole-set refinement.
 
 ## Document contract and publication
 
@@ -155,20 +250,14 @@ City initiatives stay in city docs. Select the rig being built; launch other
 rigs only when the human requests them, respecting approved dependency ordering.
 Do not infer that starting one rig authorizes every rig. Hindsight ingestion is
 independent. Discuss `--push true` and `--open-pr true` separately when applicable;
-the native build defaults leave code local.
+the build defaults leave code local.
 
-Start first runs `prepare-build` to verify the build roles and native validator
-and install its local compatibility wrapper. If it fails, surface the preparation
-error; no launch intent or source bead was created. OMG automatically provisions
-and reuses its private validator dependencies. Do not ask the human to select an
-interpreter, create a virtual environment, or install PyYAML. Use the preparation
-command instead of copying upstream scripts or bypassing their checks. If a
-dependency download fails, report the actual connectivity/package-index error
-and retry preparation after that issue is resolved.
-
-After preparation, start freezes the approved spec inputs, records durable intent, then slings the
-native OMG build continuation to the target rig. It plans implementation,
-decomposes, builds and reviews using official Gas City roles. Repeated starts for
+Start checks the required local tools and freezes the approved spec bytes. It
+writes baseline.json under an operation-specific absolute artifact root, records
+durable intent, then slings the standalone OMG build to the target rig. The
+`omg-build` skill defines planning, decomposition, builder, tester and reviewer
+assignments. `gc omg verify` checks execution records using Bash, yq and jq.
+Hindsight continues to own published document formats. Repeated starts for
 the same rig and approved snapshot return the saved operation. An ambiguous launch
 is not retried blindly. Inspect its source bead/native graph and use `recover`
 with the matching existing workflow. If no workflow exists, investigate the
@@ -193,6 +282,15 @@ request can create a new operation; abandonment itself never dispatches work.
 Do not abandon an operation while its original launcher could still complete.
 Never use force replacement to hide uncertainty. Native state owns graph
 execution; OMG stores decision and launch receipts only.
+
+For a settled failed build against unchanged approved specs, an explicit
+`initiative start <bead> --retry <failed-operation> --authority '<human retry request>'`
+creates a new attempt with separate artifacts. It verifies the prior native root
+is terminal and failed. Repeating the same retry request returns its receipt;
+it never reopens the old graph or overwrites its evidence. If the approved snapshot
+changed, use ordinary `start` after the new acceptance instead. A retry inherits
+the failed attempt's `--push`/`--open-pr` authorization; asking for a different
+publication on a retry is refused. Present that as a separate request to the human.
 
 ## Build report
 

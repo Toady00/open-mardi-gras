@@ -1,8 +1,8 @@
-Read initiative `{{initiative}}`. If `needs-human`, preserve that verdict. Otherwise
-run `gc {{omg_binding}} initiative ready {{initiative}}`; it requires matching
-passing product and technical reviews of the exact current document set.
+Load `omg-initiative` and apply its document-step protocol to initiative
+`{{initiative}}`, operation `{{operation}}`. If no human decision is outstanding,
+run `gc {{omg_binding}} initiative ready {{initiative}} --operation {{operation}}`.
+It requires passing product and technical reviews of the exact current set.
 
-This leaves a persistent record for a later conversation. Do not wait in an agent
-polling loop. Do not approve documents, change their status to accepted, or start
-a build. Draft publication is independent. Record the result and set
-`gc.outcome=pass` before closing.
+Record the result and complete the step through the protocol. Do not approve
+documents or start a build. Settlement sends the readiness result and next action
+to the originating conversation; no worker remains busy waiting for the human.

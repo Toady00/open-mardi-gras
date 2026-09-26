@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OMG settlement result",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": {"enum": ["failed", "unsupported"]},
+        "error": {"type": "string"}
+      }
+    },
+    {"$ref": "#/$defs/receipt"}
+  ],
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "item_root", "source_revision", "status"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "item_root": {"type": "string", "minLength": 1},
+        "source_revision": {
+          "description": "Preview reports the backend value verbatim, including missing values as null. Apply requires a signed int64 equality token."
+        },
+        "status": {"enum": ["would-close", "already-settled", "pending", "closed", "failed"]},
+        "error": {"type": "string"}
+      },
+      "if": {"properties": {"status": {"const": "failed"}}},
+      "then": {"required": ["error"]},
+      "else": {"not": {"required": ["error"]}}
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "operation", "workflow", "drain", "revision", "items"],
+      "properties": {
+        "status": {"enum": ["planned", "settled", "failed"]},
+        "operation": {"type": "string", "minLength": 1},
+        "workflow": {"type": "string", "minLength": 1},
+        "drain": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/item"}},
+        "error": {"type": "string"},
+        "failure_kind": {"const": "unsupported"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "planned"}}},
+          "then": {
+            "properties": {"items": {"items": {"properties": {
+              "status": {"enum": ["would-close", "already-settled"]}
+            }}}}
+          },
+          "else": {
+            "properties": {"items": {"items": {"properties": {
+              "source_revision": {"$ref": "#/$defs/revision"}
+            }}}}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "settled"}}},
+          "then": {
+            "properties": {"items": {"items": {"properties": {
+              "status": {"enum": ["closed", "already-settled"]}
+            }}}}
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "failed"}}},
+          "then": {
+            "required": ["error"],
+            "properties": {"items": {
+              "items": {"properties": {"status": {"enum": ["closed", "already-settled", "failed", "pending"]}}},
+              "contains": {"properties": {"status": {"const": "failed"}}}
+            }}
+          },
+          "else": {
+            "not": {"anyOf": [{"required": ["error"]}, {"required": ["failure_kind"]}]}
+          }
+        }
+      ]
+    }
+  }
+}
