@@ -336,7 +336,7 @@ Hindsight provenance update without treating it as a substantive spec revision.<
     CHECK{"Controller runs quality gate after review&lt;br/&gt;Exact successful native manifest, item workflows and finalizers&lt;br/&gt;Current passing receipts; required findings resolved"}
     RECON["Write reconciliation and pass execution/evidence gate&lt;br/&gt;Downstream pending; required test artifacts delivered&lt;br/&gt;Optional settlement preview/apply with advertised revision CAS&lt;br/&gt;Unsupported or conflicting bookkeeping stays explicit and pending"]
     FINAL["OMG finalization and authorized local/push/PR handoff&lt;br/&gt;Single checked publication receipt&lt;br/&gt;No deployment or PR-approval claim"]
-    REPORT["Post-workflow-settlement architect report&lt;br/&gt;Success, partial, blocked and failed builds&lt;br/&gt;Assessed SHA; implemented vs reviewed vs published&lt;br/&gt;Pending source IDs/reasons; local-only publication blockers"]
+    REPORT["Post-workflow-settlement architect report; checked teardown, up to 3 attempts&lt;br/&gt;Success, partial, blocked, failed and canceled builds; exact root outcome&lt;br/&gt;Assessed SHA; implemented vs reviewed vs published; pending source IDs/reasons&lt;br/&gt;Path-only report commit in the initiative repository; local is complete"]
     SHIP["Canonical remote Markdown revisions&lt;br/&gt;Existing Hindsight pipeline and receipts"]
     RETRY{{"Human explicitly requests retry of settled failed build"}}
     RETRYCHECK["Verify failed root, same rig and approval, no active attempt&lt;br/&gt;New operation/source/artifacts; preserve old report&lt;br/&gt;Repeated retry request returns its receipt"]
@@ -369,7 +369,7 @@ Hindsight provenance update without treating it as a substantive spec revision.<
     TALK -.-&gt;|"authored summary"| SHIP
     REFINE -.-&gt;|"drafts can publish repeatedly"| SHIP
     ACCEPTED -.-&gt; SHIP
-    REPORT --&gt;|"report publication succeeds"| SHIP
+    REPORT --&gt;|"passed root, same checkout, finalized code receipt only: report publish pushes the exact SHA to that ref under worker identity"| SHIP
     REPORT -.-&gt;|"failed run; unchanged approval"| RETRY --&gt; RETRYCHECK --&gt; PREP
     REPORT -.-&gt;|"requirements change"| EDIT</pre><div class="mermaid-out" id="mermaid-out-0"></div></figure>
 <p>Native formula checks repeat the complete refinement assignment, including both
@@ -387,7 +387,9 @@ drafts. Engine outcome and semantic operation result are separate: a native pass
 without passing reviews is incomplete, and human interruption is needs-human.
 Native scope teardown preserves reporting after
 build failure and after the root settles. A terminal build root therefore does
-not prove that its reporting assignment finished.</p>
+not prove that its reporting assignment finished; the report step carries its own
+check, whose control and attempts stay in the post-settlement tail without
+regrading the root.</p>
 <p>Readiness checks compare the reviewed Git inventory and bytes without invoking
 <code>yq</code>; unresolved human decisions cannot be marked ready. Native check executables
 resolve from pack asset layers. Abandonment requires confirmation that the original
@@ -424,9 +426,23 @@ without mutation. Reports
 list pending source IDs and reasons separately from code quality. Other settlement
 conflicts and partial results remain explicit without a settlement or overall
 completion claim. No unconditional closure or <code>gc.source_bead_id</code> retrofit is
-allowed. Failed runs preserve source tasks and findings. The current no-push report
-path can block its reporting bead on publication requirements; a local report is
-not completed publication or Hindsight shipping.</p>
+allowed. Failed runs preserve source tasks and findings. After <code>initiative settle</code>
+records the terminal root, the architect commits only the report (<code>git commit --only</code>) in the initiative repository and records report.json; <code>verify --stage report</code> checks the settled operation, the root&#39;s exact outcome (<code>unknown</code> when
+absent), the validated <code>docs/initiatives/&lt;slug&gt;</code> path, single-path commit, hash,
+frontmatter and cited revision before any remote write. <code>local</code> is the complete
+outcome and is neither publication nor Hindsight shipping. The report is published
+only when a passed build&#39;s finalized publication receipt pushed code from the
+same checkout, to exactly that receipt&#39;s ref (the PR branch for <code>open_pr</code>). The
+controller check is offline (its sandbox has no worker Git credentials), so <code>gc omg report publish</code> runs in the architect&#39;s session: it requires the remote tip
+to contain the assessed revision and every outgoing commit to be report-only,
+pushes the exact report SHA with a lease to one validated endpoint (fetch URL
+equal to the single push URL, no tag or submodule side effects), re-reads the
+remote and records the evidence, printing success only after that write lands;
+the check then verifies the evidence against local objects. A distinct docs
+repository or a non-passed root stays local (stale dispositions are normalized);
+an ambiguous push configuration, a malformed authorized ref, an unrelated
+outgoing commit or a moved remote fails closed; a failed authorized push records
+its reason and Git error and stays recoverable on the report step.</p>
 <p>Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.
 Neither publication nor ingestion approves direction or starts implementation.</p>

@@ -40,6 +40,7 @@ They share the [initiative workflow](skills/omg-initiative/SKILL.md), pinned
 | `gc omg settle` | Preview source-task bookkeeping; apply only with advertised revision CAS |
 | `omg-docs` | Initial PRD, HLD, necessary ADRs and specs, followed by shared refinement |
 | `omg-refine` | Whole-set assessment, successive revision and distinct product/technical cross-review |
+| `gc omg report` | Publish a build report under the worker's Git identity only when the build's own publication receipt authorizes it |
 | `omg-build` / `omg-work` | OMG-owned planning, tracked implementation, testing, review, reconciliation and post-settlement reporting |
 
 Approval does not launch a build. After approving specs, the human separately
@@ -167,9 +168,15 @@ than defaulting to workflow charts; visual-check sidecars live under `.omg/`.
 Build reporting runs as native post-settlement work, including on failure. Its
 completion is separate from the build root's terminal status. Reports distinguish
 implemented, reviewed and actually published code against the pinned spec revision.
-The current no-push report path can remain blocked by report publication
-requirements. Preserve the local report and blocker, and describe code as
-local-only without claiming report completion or Hindsight shipping.
+The report step is checked: the architect commits only the report (`git commit
+--only`) in the initiative repository and records its receipt. That local commit
+completes the step as `local`, neither published nor shipped, unless a passed
+build's own finalized publication receipt published code from the same checkout;
+then `gc omg report publish`, run under the worker's Git identity, pushes exactly
+the validated report SHA to that receipt's ref after proving the remote holds the
+assessed revision and that only report commits are outgoing, and records the
+evidence the offline controller check inspects. A blocker or failed push stays
+recoverable on the report bead.
 
 ## Hindsight
 
@@ -236,7 +243,22 @@ membership, failed or stale verification, unresolved findings and incomplete
 reconciliation, including changed HOME and restricted PATH.
 The development-boundary cases cover pending downstream evidence, required
 downstream test artifacts, local-check coverage, forbidden reclassification,
-and local/push/PR publication claims. Failed-build retry tests preserve prior
+and local/push/PR publication claims. Report tests commit a report on top of
+local code in a dirty checkout with pre-staged changes and cover local
+completion, path-only commits, every terminal root outcome plus missing ones,
+commits that sweep in other files, stale or false receipts, initiative-directory
+validation, frontmatter and content checks, unauthorized publication, a distinct
+docs repository, retained receipts on non-passed roots, and `report publish`
+against a real bare remote: exact-SHA push with recorded evidence, idempotent
+reruns, an offline controller check with the remote unreachable, tampered
+evidence, an unrelated outgoing commit blocked without remote mutation,
+report-only retries, a moved remote, a remote that lost the assessed revision,
+and authentication, missing-branch and rejected-push failures whose Git stderr
+is retained; plus mismatched or multiple push URLs rejected before any write,
+no tag or submodule side effects, credential redaction, malformed authorized
+refs treated as errors, receipt-persistence failure after a successful push,
+normalization of stale dispositions once authority lapses, and preflight
+failures that leave a prior successful receipt untouched. Failed-build retry tests preserve prior
 attempts and reject live, successful, foreign or differently approved roots.
 Handoff tests cover exact-decision resolution, pre-snapshot human reviews,
 notification retries, concurrent state updates, authoring recovery and semantic

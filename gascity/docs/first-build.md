@@ -125,9 +125,23 @@ including failed builds. A stalled infrastructure operation must settle or be
 explicitly failed before its report can run.
 Reconcile/finalize verification gates execution evidence, not source-task closure.
 The report must list pending source IDs and settlement reasons. For this no-push
-trial, describe code as local-only. The current report publication requirements
-can block the report bead; retain its local report and publication error rather
-than claiming report completion or Hindsight shipping.
+trial, describe code as local-only. The architect commits the report on its own
+(`git commit --only -- <path>`, leaving your other changes and staged files alone)
+in the document repository, records `status: local` in report.json and runs
+`gc omg report publish`, which prints `local` and touches nothing; the checked
+report step then completes without contacting any remote, and the local commit is
+the durable artifact until you publish it yourself. The report is published only
+when a passed build's own finalized publication receipt pushed code from that
+same checkout, and only to that receipt's ref; a separate docs repository, or a
+failed or canceled root, always keeps its report local. `report publish` runs in
+the architect's session with its Git credentials (the controller check has none)
+and refuses to push when an unrelated unpublished commit sits below the report or
+the remote has moved; a blocker or failed push stays recoverable on the report
+bead with its local commit and the exact Git error.
+
+```sh
+gc omg verify --stage report --root <absolute-artifact-root>
+```
 
 ## Upgrading an earlier trial
 

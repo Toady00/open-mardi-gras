@@ -6,7 +6,7 @@ set -euo pipefail
 fail() { printf 'omg verify: %s\n' "$*" >&2; exit 1; }
 for tool in jq yq git shasum python3; do command -v "$tool" >/dev/null || fail "missing $tool"; done
 gc_bin="${GC_BIN:-gc}"
-stage= root= work= check_bead= workflow=
+stage= root= work= check_bead= workflow= plan=
 context=()
 while (($#)); do
   case "$1" in
@@ -15,9 +15,11 @@ while (($#)); do
     --work) work="${2:?}"; shift 2;;
     --city|--rig) context+=("$1" "${2:?}"); shift 2;;
     --json) shift;;
+    --plan) plan=1; shift;;
     *) fail "unknown argument $1";;
   esac
 done
+[[ -z "$plan" || "$stage" == report ]] || fail '--plan applies to the report stage only'
 gc_call() { "$gc_bin" "$@" ${context[@]+"${context[@]}"} --json; }
 bead() { gc_call bd show "$1" | jq -e 'if type == "array" then if length == 1 then .[0] else error("expected one bead") end else . end | select(.id != null)'; }
 if [[ -z "$stage" ]]; then
@@ -32,7 +34,7 @@ if [[ -z "$stage" ]]; then
     root=$(jq -er '.metadata["omg.artifact_root"]' <<<"$check_bead")
   fi
 fi
-case "$stage" in contract|plan|decompose|work|quality|reconcile|finalize) ;; *) fail "unknown stage $stage";; esac
+case "$stage" in contract|plan|decompose|work|quality|reconcile|finalize|report) ;; *) fail "unknown stage $stage";; esac
 [[ "$root" = /* && -d "$root" ]] || fail 'artifact root must be an existing absolute directory'
 hash() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
 json() { jq -e 'type == "object"' "$root/$1.json" >/dev/null || fail "missing or invalid $1.json"; }
@@ -65,6 +67,120 @@ specs=()
 while IFS= read -r source; do specs+=("$source"); done < <(jq -r '.files | to_entries[] | select(.value.type == "spec") | .key' <<<"$baseline")
 contract=$(bash "$(dirname "${BASH_SOURCE[0]}")/delivery-contract.sh" "$approved" ${specs[@]+"${specs[@]}"}) || fail 'approved delivery contract is invalid; refine and approve it before rebuilding'
 if [[ "$stage" == contract ]]; then printf '{"outcome":"pass"}\n'; exit 0; fi
+if [[ "$stage" == report ]]; then
+  # Post-settlement reporting completes for failed and partial builds too, so
+  # nothing below depends on plan, work, quality or finalization records.
+  jq -e --arg op "$operation" '.operations[$op].phase == "settled"' <<<"$state" >/dev/null || fail 'report requires the settled build operation; record initiative settle first'
+  docs_repo=$(jq -er '.repo' <<<"$state")
+  docs_dir=$(jq -er '.directory' <<<"$state")
+  slug=$(jq -er '.slug' <<<"$state") || fail 'initiative record has no slug'
+  [[ "$docs_repo" = /* && -d "$docs_repo" ]] || fail 'initiative repository must be an existing absolute directory'
+  # The ledger writes docs/initiatives/<slug> with a lowercase slug; accept
+  # exactly that shape rather than trusting a concatenated path.
+  [[ "$docs_dir" =~ ^docs/initiatives/([a-z0-9][a-z0-9-]*)$ && "${BASH_REMATCH[1]}" == "$slug" ]] || fail 'initiative directory must be docs/initiatives/<slug> for the recorded slug'
+  [[ "$operation" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 'operation key is not a safe file name'
+  report_path="$docs_dir/reports/$operation.md"
+  json report
+  report=$(<"$root/report.json")
+  jq -e --arg o "$operation" --arg p "$report_path" --argjson s "$state" 'def text: type == "string" and length > 0;
+    .operation == $o and .path == $p and (.id | text) and (.sha256 | text) and (.commit | text) and
+    (.revision | text) and (.workflow | text) and .workflow == $s.operations[$o].workflow and
+    (.build_outcome | IN("pass", "fail", "skipped", "canceled", "unknown"))
+  ' <<<"$report" >/dev/null || fail 'report receipt must name this operation, its settled workflow, the canonical report path, identity, hash, commit, assessed revision and build outcome'
+  workflow=$(jq -r '.workflow' <<<"$report")
+  build_outcome=$(jq -r '.build_outcome' <<<"$report")
+  # The receipt repeats the root's terminal gc.outcome exactly; a missing or
+  # unrecognised value is reported as unknown, never as a pass.
+  bead "$workflow" | jq -e --arg o "$operation" --arg i "$initiative" --arg out "$build_outcome" '
+    .status == "closed" and .metadata["gc.kind"] == "workflow" and .metadata["gc.var.operation"] == $o and
+    .metadata["gc.var.initiative"] == $i and
+    ((.metadata["gc.outcome"] // "") as $actual |
+      if $actual | IN("pass", "fail", "skipped", "canceled") then $out == $actual else $out == "unknown" end)
+  ' >/dev/null || fail 'report must describe the terminal build root and its actual outcome'
+  if [[ -n "$check_bead" ]]; then
+    jq -e --arg w "$workflow" '.metadata["gc.root_bead_id"] == $w' <<<"$check_bead" >/dev/null || fail 'report receipt names another workflow'
+  fi
+  commit=$(jq -r '.commit' <<<"$report")
+  revision=$(jq -r '.revision' <<<"$report")
+  sha=$(jq -r '.sha256' <<<"$report")
+  [[ "$commit" =~ ^[0-9a-f]{40,64}$ && "$revision" =~ ^[0-9a-f]{40,64}$ ]] || fail 'report commit and assessed revision need full commit SHAs'
+  [[ "$(git -C "$repo" cat-file -t "$revision" 2>/dev/null)" == commit ]] && git -C "$repo" merge-base --is-ancestor "$revision" HEAD || fail 'assessed revision is not in the current code history'
+  if [[ "$build_outcome" == pass ]]; then
+    json publication
+    jq -e --arg r "$revision" '.revision == $r' "$root/publication.json" >/dev/null || fail 'assessed revision must match the finalized publication receipt'
+  fi
+  [[ "$(git -C "$docs_repo" cat-file -t "$commit" 2>/dev/null)" == commit ]] && git -C "$docs_repo" merge-base --is-ancestor "$commit" HEAD || fail 'report commit is not in the initiative repository history'
+  [[ $(git -C "$docs_repo" rev-list --parents -n 1 "$commit" | wc -w) -eq 2 ]] || fail 'report commit must be a single ordinary commit'
+  [[ "$(git -C "$docs_repo" diff-tree --no-commit-id --name-only -r "$commit")" == "$report_path" ]] || fail 'report commit must change only the report'
+  [[ "$(git -C "$docs_repo" cat-file -t "$commit:$report_path" 2>/dev/null)" == blob ]] || fail 'report commit does not contain the report'
+  blob=$(mktemp "${TMPDIR:-/tmp}/omg-report.XXXXXX"); trap 'rm -f "$blob"' EXIT
+  git -C "$docs_repo" show "$commit:$report_path" > "$blob"
+  [[ "$(hash "$blob")" == "$sha" ]] || fail 'report hash does not match the committed report'
+  [[ -f "$docs_repo/$report_path" && "$(hash "$docs_repo/$report_path")" == "$sha" ]] || fail 'report changed after its recorded commit'
+  [[ -z "$(git -C "$docs_repo" status --porcelain --untracked-files=all -- "$report_path")" ]] || fail 'report working copy differs from its commit'
+  yq --front-matter=extract -o=json '.' "$blob" 2>/dev/null | jq -e --argjson b "$baseline" --argjson r "$report" '
+    .schema_version == 2 and .type == "build-report" and .status == "draft" and .source == "agent" and
+    (.title | type == "string" and length > 0) and .id == $r.id and
+    (.id | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and (.id as $id | all($b.files[]; .id != $id))
+  ' >/dev/null || fail 'report needs Hindsight schema 2 agent-authored build-report frontmatter with a unique identity'
+  grep -qF -- "$revision" "$blob" && grep -qF -- "$operation" "$blob" || fail 'report must cite the assessed revision and the launch operation'
+  # Report publication has no authority of its own. It is authorized only by
+  # the build's finalized publication receipt for a passed root, and only when
+  # the report lives in the same checkout whose code that receipt published:
+  # the destination is exactly the receipt's ref (the PR branch for open_pr,
+  # never the default). Every other case completes locally.
+  # Policy first: does this run require publication at all? Only then is the
+  # receipt's destination validated, and a malformed one is an error, never a
+  # quiet fall-back to local.
+  destination=
+  if [[ "$build_outcome" == pass && "$(cd "$docs_repo" && pwd -P)" == "$(cd "$repo" && pwd -P)" ]] \
+     && jq -e '.publication.push or .publication.open_pr' <<<"$baseline" >/dev/null; then
+    destination=$(jq -er --argjson b "$baseline" --arg r "$revision" '
+      select(.revision == $r and .development == "verified") |
+      select(.status == (if $b.publication.open_pr then "pr-open" else "pushed" end)) | (.remote_ref // "")' "$root/publication.json" 2>/dev/null) \
+      || fail 'code publication was authorized but the finalized publication receipt does not record it for the assessed revision'
+    [[ "$destination" == */* ]] || fail "publication receipt remote_ref must be <remote>/<branch>, got '$destination'"
+    remote_name=${destination%%/*}; branch_name=${destination#*/}
+    [[ "$remote_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "publication receipt remote_ref names an invalid remote '$remote_name'"
+    git check-ref-format --branch "$branch_name" >/dev/null 2>&1 && [[ "$branch_name" != refs/* ]] || fail "publication receipt remote_ref names an invalid branch '$branch_name'"
+  fi
+  report_blob=$(git -C "$docs_repo" rev-parse "$commit:$report_path")
+  if [[ -n "$plan" ]]; then
+    jq -cn --arg d "$destination" --arg repo "$docs_repo" --arg c "$commit" --arg r "$revision" --arg p "$report_path" --arg blob "$report_blob" \
+      '{outcome: "pass", destination: (if $d == "" then null else $d end), repo: $repo, commit: $c, revision: $r, path: $p, report_blob: $blob}'
+    exit 0
+  fi
+  status=$(jq -r '.status' <<<"$report")
+  if [[ -z "$destination" ]]; then
+    [[ "$status" == local ]] && jq -e '.remote_ref == null' <<<"$report" >/dev/null || fail 'no build publication receipt authorizes this repository; the report stays local'
+    printf '{"outcome":"pass"}\n'; exit 0
+  fi
+  # This check runs offline, in the controller sandbox. The remote was read and
+  # written by `report publish` under the worker's own Git identity, which
+  # recorded what it observed in .publication; only that retained proof and
+  # the local objects it names are checked here.
+  case "$status" in
+    pushed) ;;
+    failed) fail "authorized report publication to $destination failed and stays recoverable: $(jq -r '[.reason, .error] | map(select(type == "string" and length > 0)) | join(": ")' <<<"$report")";;
+    local) fail "report is verified locally; publish it to $destination with report publish, then rerun this check";;
+    *) fail "unknown report publication status $status";;
+  esac
+  jq -e --arg d "$destination" --arg c "$commit" --arg r "$revision" --arg blob "$report_blob" '
+    .remote_ref == $d and (.publication | type == "object") and (.publication |
+      .destination == $d and .pushed == $c and .observed == $c and .revision == $r and .report_blob == $blob and
+      (.base | type == "string" and test("^[0-9a-f]{40,64}$")) and (.url | type == "string" and length > 0))
+  ' <<<"$report" >/dev/null || fail "pushed receipt needs report publish evidence for $destination naming this report commit, blob and assessed revision"
+  base=$(jq -r '.publication.base' <<<"$report")
+  git -C "$docs_repo" cat-file -e "$base^{commit}" 2>/dev/null || fail 'recorded remote base is not available locally; rerun report publish'
+  git -C "$docs_repo" merge-base --is-ancestor "$revision" "$base" || fail 'recorded remote base did not contain the finalized assessed revision'
+  git -C "$docs_repo" merge-base --is-ancestor "$base" "$commit" || fail 'report commit does not descend from the recorded remote base'
+  while IFS= read -r outgoing; do
+    [[ -n "$outgoing" ]] || continue
+    [[ $(git -C "$docs_repo" rev-list --parents -n 1 "$outgoing" | wc -w) -eq 2 && "$(git -C "$docs_repo" diff-tree --no-commit-id --name-only -r "$outgoing")" == "$report_path" ]] \
+      || fail "outgoing commit $outgoing beyond the assessed revision is not a report-only commit"
+  done < <(git -C "$docs_repo" rev-list "$base..$commit")
+  printf '{"outcome":"pass"}\n'; exit 0
+fi
 json plan
 jq -e 'def text: type == "string" and length > 0;
   (.requirements | type == "array" and length > 0) and

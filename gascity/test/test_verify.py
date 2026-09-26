@@ -158,7 +158,7 @@ else:
         args = [str(PACK / "assets/scripts/verify.sh")]
         env = self.env.copy()
         if controller:
-            env["GC_BEAD_ID"] = "work-check" if stage == "work" else "check"
+            env["GC_BEAD_ID"] = {"work": "work-check", "report": "report-check"}.get(stage, "check")
         else:
             args += ["--root", str(self.root), "--stage", stage]
             if stage == "work":
@@ -530,6 +530,641 @@ else:
             self.write('publication', publication)
             self.verify('finalize')
 
+    # Post-settlement report. By default the initiative repository is the rig
+    # checkout, so the report commit sits on top of local, unpushed code commits.
+    REPORT_PATH = "docs/initiatives/city-1/reports/build-1.md"
+
+    def settle(self, outcome="pass", publication=None, receipt=None, separate_docs=False):
+        self.mixed_contract()
+        if publication:
+            self.baseline["publication"] = publication
+            self.write("baseline", self.baseline)
+        if receipt:
+            self.write("publication", {"revision": self.head, "development": "verified", "deployed": False,
+                                       "pr_approved": False, **receipt})
+        self.docs = self.repo
+        if separate_docs:
+            self.docs = self.base / "docs repo"
+            self.docs.mkdir()
+            self.docs_git("init", "-q")
+            (self.docs / "README.md").write_text("initiative documents\n")
+            self.docs_git("add", "README.md")
+            self.docs_commit("docs")
+        self.state.update(repo=str(self.docs), directory="docs/initiatives/city-1", slug="city-1")
+        self.state["operations"]["build-1"].update(phase="settled", workflow="workflow-1", outcome=outcome,
+                                                   publication=self.baseline["publication"])
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.beads["workflow-1"].update(status="closed")
+        if outcome is None:
+            self.beads["workflow-1"]["metadata"].pop("gc.outcome", None)
+        else:
+            self.beads["workflow-1"]["metadata"]["gc.outcome"] = outcome
+        self.beads["report-check"] = {"id": "report-check", "metadata": {
+            "omg.stage": "report", "omg.artifact_root": str(self.root), "omg.operation": "build-1",
+            "omg.initiative": "city-1", "gc.root_bead_id": "workflow-1"}}
+        # Unrelated user changes stay in the shared checkout and must be neither
+        # required to be clean nor swept into the report commit.
+        (self.repo / "notes.txt").write_text("untracked scratch\n")
+        (self.repo / "app.txt").write_text("uncommitted edit\n")
+
+    def docs_git(self, *args):
+        return subprocess.check_output(["git", "-C", str(self.docs), *args], text=True).strip()
+
+    def docs_commit(self, message, *args):
+        self.docs_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                      "commit", "-qm", message, *args)
+        return self.docs_git("rev-parse", "HEAD")
+
+    def report_document(self, revision=None, identity="build-report.city-1.build-1", status="draft", source="agent"):
+        return (f"---\nschema_version: 2\nid: {identity}\ntype: build-report\ntitle: Build report\n"
+                f"status: {status}\nsource: {source}\nscope: repo\ncreated_at: 2026-09-26T00:00:00Z\n"
+                f"updated_at: 2026-09-26T00:00:00Z\n---\nOperation build-1 assessed revision {revision or self.head}.\n")
+
+    def commit_report(self, content=None, only=True):
+        """The documented path-only commit; only=False is a careless plain commit."""
+        doc = self.docs / self.REPORT_PATH
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text(content or self.report_document())
+        self.docs_git("add", "--", self.REPORT_PATH)
+        return self.docs_commit("docs: build report", *(["--only", "--", self.REPORT_PATH] if only else []))
+
+    def receipt(self, commit, **overrides):
+        record = {"operation": "build-1", "workflow": "workflow-1", "build_outcome": "pass", "revision": self.head,
+                  "path": self.REPORT_PATH, "id": "build-report.city-1.build-1",
+                  "sha256": self.hash(self.docs / self.REPORT_PATH), "commit": commit,
+                  "status": "local", "remote_ref": None}
+        record.update(overrides)
+        self.write("report", record)
+        return record
+
+    def verify_report(self, ok=True, controller=False):
+        args = {"controller": True, "restricted": True} if controller else {}
+        return self.verify("report", ok=ok, **args)
+
+    def add_remote(self):
+        remote = self.base / "origin.git"
+        subprocess.check_call(["git", "init", "-q", "--bare", str(remote)])
+        self.git("remote", "add", "origin", str(remote))
+        return self.git("symbolic-ref", "--short", "HEAD")
+
+    def test_local_only_build_completes_with_durable_local_report(self):
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.verify_report()
+        self.verify_report(controller=True)
+        self.assertEqual(self.git("diff-tree", "--no-commit-id", "--name-only", "-r", commit), self.REPORT_PATH)
+        self.assertIn("?? notes.txt", self.git("status", "--porcelain"))
+        self.assertEqual(self.git("remote"), "")  # no remote exists; the local path never talks to one
+
+    def test_path_only_commit_leaves_prestaged_changes_in_the_index(self):
+        self.settle()
+        self.git("add", "app.txt")
+        staged = self.git("rev-parse", ":app.txt")
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.verify_report()
+        self.assertEqual(self.git("diff-tree", "--no-commit-id", "--name-only", "-r", commit), self.REPORT_PATH)
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "app.txt")
+        self.assertEqual(self.git("rev-parse", ":app.txt"), staged)
+        self.assertNotEqual(self.git("rev-parse", "HEAD:app.txt"), staged)
+
+    def test_report_commit_cannot_sweep_in_prestaged_files(self):
+        self.settle()
+        self.git("add", "app.txt")
+        commit = self.commit_report(only=False)
+        self.receipt(commit)
+        self.assertIn("change only the report", self.verify_report(ok=False).stderr)
+
+    def test_terminal_outcomes_are_reported_exactly(self):
+        for outcome in ["fail", "canceled", "skipped"]:
+            with self.subTest(outcome=outcome):
+                self.setUp()
+                self.settle(outcome=outcome)
+                for name in ["plan", "plan-review", "decomposition", "tests", "review", "reconciliation", "publication"]:
+                    (self.root / (name + ".json")).unlink()
+                commit = self.commit_report()
+                self.receipt(commit, build_outcome=outcome)
+                self.verify_report()
+                for claimed in ["pass", "unknown"]:
+                    self.receipt(commit, build_outcome=claimed)
+                    self.assertIn("actual outcome", self.verify_report(ok=False).stderr)
+        for outcome in [None, "mystery"]:
+            with self.subTest(outcome=outcome):
+                self.setUp()
+                self.settle(outcome=outcome)
+                commit = self.commit_report()
+                self.receipt(commit, build_outcome="unknown")
+                self.verify_report()
+                self.receipt(commit, build_outcome="pass")
+                self.assertIn("actual outcome", self.verify_report(ok=False).stderr)
+        self.setUp()
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit)
+        (self.root / "publication.json").unlink()
+        self.assertIn("publication", self.verify_report(ok=False).stderr)
+
+    def test_stale_or_false_report_receipts_fail(self):
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit, sha256="0" * 64)
+        self.assertIn("hash", self.verify_report(ok=False).stderr)
+        self.receipt(commit, path="docs/initiatives/city-1/reports/../../../other.md")
+        self.verify_report(ok=False)
+        self.receipt(self.git("rev-parse", "HEAD~1"))
+        self.assertIn("change only", self.verify_report(ok=False).stderr)
+        self.receipt(commit, revision="b" * 40)
+        self.assertIn("code history", self.verify_report(ok=False).stderr)
+        self.receipt(commit, revision=self.git("rev-parse", "HEAD~2"))  # older code commit than finalized
+        self.assertIn("publication receipt", self.verify_report(ok=False).stderr)
+        self.receipt(commit, workflow="other")
+        self.verify_report(ok=False)
+        self.receipt(commit)
+        self.beads["report-check"]["metadata"]["gc.root_bead_id"] = "other"
+        self.assertIn("another workflow", self.verify_report(ok=False, controller=True).stderr)
+        self.beads["report-check"]["metadata"]["gc.root_bead_id"] = "workflow-1"
+        self.receipt(commit)
+        (self.repo / self.REPORT_PATH).write_text("edited after commit\n")
+        self.assertIn("changed after", self.verify_report(ok=False).stderr)
+        later = self.commit_report(self.report_document() + "\nRetry addendum.\n")
+        self.assertIn("changed after", self.verify_report(ok=False).stderr)  # receipt names the superseded commit
+        self.receipt(later)  # a re-committed report with a fresh receipt is the retry path
+        self.verify_report()
+
+    def test_initiative_directory_is_validated_not_trusted(self):
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit)
+        for directory, slug in [("docs/initiatives/city-1/..", "city-1"), ("docs/initiatives/../city-1", "city-1"),
+                                ("docs/initiatives/./city-1", "city-1"), (str(self.repo / "docs/initiatives/city-1"), "city-1"),
+                                ("docs/other/city-1", "city-1"), ("docs/initiatives/City-1", "City-1"),
+                                ("docs/initiatives/city-1", "other"), ("docs/initiatives/city-1/", "city-1")]:
+            with self.subTest(directory=directory, slug=slug):
+                self.state.update(directory=directory, slug=slug)
+                self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+                self.assertIn("initiative directory", self.verify_report(ok=False).stderr)
+        self.state.update(directory="docs/initiatives/city-1", slug="city-1")
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.verify_report()
+        # A legitimate multi-segment slug works end to end.
+        self.setUp()
+        self.REPORT_PATH = "docs/initiatives/my-init-2/reports/build-1.md"
+        self.settle()
+        self.state.update(directory="docs/initiatives/my-init-2", slug="my-init-2")
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        commit = self.commit_report(self.report_document(identity="build-report.my-init-2.build-1"))
+        self.receipt(commit, id="build-report.my-init-2.build-1")
+        self.verify_report()
+
+    def test_report_frontmatter_and_content_are_checked(self):
+        self.settle()
+        for content in [self.report_document(identity="spec.example"),
+                        self.report_document(status="accepted", source="human"),
+                        self.report_document(source="human"),
+                        self.report_document().replace("type: build-report", "type: spec"),
+                        self.report_document(revision="c" * 40)]:
+            commit = self.commit_report(content)
+            self.receipt(commit)
+            self.verify_report(ok=False)
+        commit = self.commit_report()
+        self.receipt(commit, id="build-report.other")
+        self.assertIn("frontmatter", self.verify_report(ok=False).stderr)
+
+    def test_report_requires_settled_operation(self):
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.state["operations"]["build-1"]["phase"] = "launched"
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.assertIn("settle", self.verify_report(ok=False).stderr)
+
+    def test_unauthorized_report_publication_is_rejected(self):
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit, status="pushed", remote_ref="origin/master")
+        self.assertIn("stays local", self.verify_report(ok=False).stderr)
+        self.receipt(commit, status="failed", error="push rejected")
+        self.assertIn("stays local", self.verify_report(ok=False).stderr)
+
+    def test_authority_binds_to_the_build_publication_receipt(self):
+        # A distinct initiative repository has no report publication authority,
+        # even when the code push or PR was authorized and happened.
+        self.settle(publication={"push": True, "open_pr": False}, receipt={"status": "pushed", "remote_ref": "origin/master"},
+                    separate_docs=True)
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.verify_report()
+        self.receipt(commit, status="pushed", remote_ref="origin/master")
+        self.assertIn("stays local", self.verify_report(ok=False).stderr)
+        # Same repository, publication authorized, but the build failed before a
+        # publication receipt existed: nothing was published, so the report stays local.
+        self.setUp()
+        self.settle(outcome="fail", publication={"push": True, "open_pr": False})
+        (self.root / "publication.json").unlink()
+        commit = self.commit_report()
+        self.receipt(commit, build_outcome="fail")
+        self.verify_report()
+        self.receipt(commit, build_outcome="fail", status="pushed", remote_ref="origin/master")
+        self.assertIn("stays local", self.verify_report(ok=False).stderr)
+
+    # --- worker-side publication (report publish) -------------------------
+
+    def publish(self, *args, ok=True, restricted=False, extra_env=None):
+        self.transport.write_text(encoded(self.beads))
+        env = self.env.copy()
+        if restricted:
+            env.update(PATH=self.tool_path(), HOME=str(self.base))
+            env.pop("SSH_AUTH_SOCK", None)
+        env.update(extra_env or {})
+        result = subprocess.run([str(PACK / "assets/scripts/report-publish.sh"), "publish", "--root", str(self.root), *args],
+                                cwd=self.base, env=env, text=True, capture_output=True)
+        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        result.json = json.loads(result.stdout) if result.stdout.strip() else None
+        return result
+
+    def remote_tip(self, branch):
+        return subprocess.check_output(["git", "-C", str(self.base / "origin.git"), "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+                                       text=True).strip()
+
+    def authorized(self, pr=False):
+        """Rig with a bare remote; the finalized code (C, the assessed revision) is on the authorized branch."""
+        self.add_remote()
+        ref = "origin/feature/omg-build-1" if pr else "origin/master"
+        receipt = {"status": "pr-open" if pr else "pushed", "remote_ref": ref}
+        if pr:
+            receipt["pr_url"] = "https://example.invalid/pull/1"
+        self.settle(publication={"push": not pr, "open_pr": pr}, receipt=receipt)
+        self.branch = ref.split("/", 1)[1]
+        self.git("push", "-q", "origin", f"HEAD:refs/heads/{self.branch}")
+        return ref
+
+    def report_json(self):
+        return json.loads((self.root / "report.json").read_text())
+
+    def test_destination_requires_a_passed_root(self):
+        for outcome in ["fail", "canceled", "skipped", None]:
+            with self.subTest(outcome=outcome):
+                self.setUp()
+                self.add_remote()
+                self.settle(outcome=outcome, publication={"push": True, "open_pr": False},
+                            receipt={"status": "pushed", "remote_ref": "origin/master"})
+                self.git("push", "-q", "origin", "HEAD:refs/heads/master")
+                commit = self.commit_report()
+                self.receipt(commit, build_outcome=outcome or "unknown")
+                self.verify_report()
+                self.assertEqual(self.publish().json["status"], "local")
+                self.assertEqual(self.remote_tip("master"), self.head)
+                self.receipt(commit, build_outcome=outcome or "unknown", status="pushed", remote_ref="origin/master")
+                self.assertIn("stays local", self.verify_report(ok=False).stderr)
+
+    def test_local_only_publish_touches_nothing(self):
+        self.settle()
+        commit = self.commit_report()
+        before = self.receipt(commit)
+        raw = (self.root / "report.json").read_bytes()
+        self.assertEqual(self.publish("--preflight").json, {"status": "preflight", "destination": None, "normalize": False})
+        self.assertEqual(self.publish().json, {"status": "local", "destination": None, "normalized": False})
+        self.assertEqual((self.root / "report.json").read_bytes(), raw)
+        self.assertEqual(self.report_json(), before)
+        self.verify_report()
+
+    def test_publish_pushes_the_exact_report_sha_and_records_verified_proof(self):
+        for pr in [False, True]:
+            with self.subTest(pr=pr):
+                self.setUp()
+                ref = self.authorized(pr)
+                commit = self.commit_report()
+                self.receipt(commit)
+                self.assertIn("publish it to " + ref, self.verify_report(ok=False).stderr)
+                plan = self.publish("--preflight").json
+                self.assertEqual((plan["status"], plan["destination"], plan["commit"], plan["base"], plan["outgoing"]),
+                                 ("preflight", ref, commit, self.head, [commit]))
+                self.assertEqual(self.report_json()["status"], "local")
+                self.assertEqual(self.remote_tip(self.branch), self.head)
+                done = self.publish().json
+                self.assertEqual((done["status"], done["destination"], done["commit"]), ("pushed", ref, commit))
+                self.assertEqual(self.remote_tip(self.branch), commit)
+                receipt = self.report_json()
+                self.assertEqual(receipt["status"], "pushed")
+                self.assertEqual(receipt["remote_ref"], ref)
+                proof = receipt["publication"]
+                self.assertEqual((proof["destination"], proof["base"], proof["pushed"], proof["observed"], proof["revision"]),
+                                 (ref, self.head, commit, commit, self.head))
+                self.assertEqual(proof["report_blob"], self.git("rev-parse", f"{commit}:{self.REPORT_PATH}"))
+                self.verify_report()
+                # Publishing again is idempotent: nothing outgoing, same proof.
+                again = self.publish().json
+                self.assertEqual((again["status"], again["base"]), ("pushed", commit))
+                self.verify_report()
+                # The controller check is offline: it passes with the remote unreachable
+                # and without any Git credentials, because it checks the retained proof.
+                self.git("remote", "set-url", "origin", "git@example.invalid:omg/docs.git")
+                self.verify_report(controller=True)
+                # Tampered or inconsistent proof fails.
+                for field, value in [("observed", self.head), ("pushed", self.head), ("base", "0" * 40),
+                                     ("revision", "b" * 40), ("report_blob", "0" * 40)]:
+                    self.receipt(commit, status="pushed", remote_ref=ref, publication={**proof, field: value})
+                    self.verify_report(ok=False)
+                self.receipt(commit, status="pushed", remote_ref=ref)
+                self.assertIn("evidence", self.verify_report(ok=False).stderr)
+
+    def test_unrelated_outgoing_commit_blocks_publication_without_remote_mutation(self):
+        ref = self.authorized()
+        assessed = self.head
+        (self.repo / "app.txt").write_text("unpublished code change\n")
+        self.commit()  # U: not report-only, not published
+        commit = self.commit_report(self.report_document(revision=assessed))  # R on top of U
+        self.receipt(commit, revision=assessed)
+        self.assertIn("publish it to", self.verify_report(ok=False).stderr)
+        result = self.publish(ok=False)
+        self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "outgoing"))
+        self.assertIn(self.git("rev-parse", "HEAD~1"), result.json["error"])
+        self.assertEqual(self.remote_tip(self.branch), assessed)
+        receipt = self.report_json()
+        self.assertEqual((receipt["status"], receipt["reason"], receipt["remote_ref"]), ("failed", "outgoing", None))
+        self.assertEqual(receipt["commit"], commit)  # the local artifact is preserved
+        stderr = self.verify_report(ok=False).stderr
+        self.assertIn("recoverable", stderr)
+        self.assertIn("outgoing", stderr)
+        # A hand-written pushed receipt cannot launder the unrelated commit either.
+        self.git("push", "-q", "origin", f"HEAD:refs/heads/{self.branch}")
+        self.receipt(commit, revision=assessed, status="pushed", remote_ref=ref, publication={
+            "destination": ref, "url": str(self.base / "origin.git"), "base": assessed, "pushed": commit,
+            "observed": commit, "revision": assessed, "report_blob": self.git("rev-parse", f"{commit}:{self.REPORT_PATH}")})
+        self.assertIn("not a report-only commit", self.verify_report(ok=False).stderr)
+
+    def test_report_only_retries_publish_together(self):
+        ref = self.authorized()
+        first = self.commit_report(self.report_document(identity="build-report.wrong"))
+        second = self.commit_report()
+        self.receipt(second)
+        self.assertEqual(self.publish("--preflight").json["outgoing"], [second, first])
+        self.assertEqual(self.publish().json["status"], "pushed")
+        self.assertEqual(self.remote_tip(self.branch), second)
+        self.assertEqual(self.report_json()["publication"]["base"], self.head)
+        self.verify_report()
+        self.verify_report(controller=True)
+
+    def test_moved_remote_fails_closed_before_any_push(self):
+        ref = self.authorized()
+        assessed = self.head
+        commit = self.commit_report()
+        self.receipt(commit)
+        # Someone else advanced the authorized branch after finalization.
+        other = self.base / "other"
+        subprocess.check_call(["git", "clone", "-q", str(self.base / "origin.git"), str(other)])
+        (other / "theirs.txt").write_text("concurrent\n")
+        subprocess.check_call(["git", "-C", str(other), "add", "theirs.txt"])
+        subprocess.check_call(["git", "-C", str(other), "-c", "user.name=T", "-c", "user.email=t@example.invalid",
+                               "-c", "commit.gpgsign=false", "commit", "-qm", "theirs"])
+        subprocess.check_call(["git", "-C", str(other), "push", "-q", "origin", f"HEAD:refs/heads/{self.branch}"])
+        moved = self.remote_tip(self.branch)
+        result = self.publish(ok=False)
+        self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "diverged"))
+        self.assertIn(moved, result.json["error"])
+        self.assertEqual(self.remote_tip(self.branch), moved)
+        self.assertEqual(self.report_json()["status"], "failed")
+        self.assertIn("recoverable", self.verify_report(ok=False).stderr)
+        # The remote no longer holding the assessed revision is its own blocker.
+        subprocess.check_call(["git", "-C", str(self.base / "origin.git"), "update-ref", f"refs/heads/{self.branch}",
+                               self.git("rev-parse", f"{assessed}~1")])
+        result = self.publish(ok=False)
+        self.assertEqual(result.json["reason"], "revision_not_published")
+        self.assertIn(assessed, result.json["error"])
+
+    def test_remote_failures_retain_diagnostics_under_worker_identity(self):
+        ref = self.authorized()
+        commit = self.commit_report()
+        self.receipt(commit)
+        # Authentication or network failure: the worker's Git identity could not
+        # reach the remote. The exact stderr is retained and never relabelled.
+        self.git("remote", "set-url", "origin", "git@example.invalid:omg/docs.git")
+        result = self.publish(ok=False, restricted=True, extra_env={"GIT_SSH_COMMAND": "false"})
+        self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "remote"))
+        self.assertIn("Could not read from remote repository", result.json["error"])
+        receipt = self.report_json()
+        self.assertEqual((receipt["status"], receipt["reason"]), ("failed", "remote"))
+        self.assertIn("Could not read from remote repository", receipt["error"])
+        stderr = self.verify_report(ok=False, controller=True).stderr
+        self.assertIn("Could not read from remote repository", stderr)
+        self.assertIn("recoverable", stderr)
+        for wrong in ["not found", "frontmatter", "report-only", "hash"]:
+            self.assertNotIn(wrong, stderr)
+        self.assertEqual(receipt["commit"], commit)
+        # Missing branch is reported as such, distinct from an unreachable remote.
+        self.git("remote", "set-url", "origin", str(self.base / "origin.git"))
+        subprocess.check_call(["git", "-C", str(self.base / "origin.git"), "update-ref", "-d", f"refs/heads/{self.branch}"])
+        result = self.publish(ok=False)
+        self.assertEqual(result.json["reason"], "missing_branch")
+        self.assertIn(ref, result.json["error"])
+        # A rejected push keeps the remote untouched and retains the server's message.
+        self.git("push", "-q", "origin", f"{self.head}:refs/heads/{self.branch}")
+        hook = self.base / "origin.git" / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\necho 'policy: report pushes refused' >&2\nexit 1\n")
+        hook.chmod(0o755)
+        result = self.publish(ok=False)
+        self.assertEqual(result.json["reason"], "push")
+        self.assertIn("policy: report pushes refused", result.json["error"])
+        self.assertEqual(self.remote_tip(self.branch), self.head)
+        self.assertIn("policy: report pushes refused", self.verify_report(ok=False).stderr)
+        hook.unlink()
+        # After the blocker clears, the retained local artifact publishes as is.
+        self.assertEqual(self.publish().json["status"], "pushed")
+        self.verify_report()
+
+    def test_ambiguous_push_endpoints_are_rejected_before_any_write(self):
+        ref = self.authorized()
+        commit = self.commit_report()
+        self.receipt(commit)
+        other = self.base / "other.git"
+        subprocess.check_call(["git", "init", "-q", "--bare", str(other)])
+        subprocess.check_call(["git", "-C", str(other), "symbolic-ref", "HEAD", "refs/heads/master"])
+        self.git("push", "-q", str(other), f"{self.head}:refs/heads/{self.branch}")
+        # A push URL that differs from the fetch URL would publish to a repository
+        # the code receipt never named; two push URLs would publish twice.
+        for urls in [[str(other)], [str(self.base / "origin.git"), str(other)]]:
+            with self.subTest(pushurls=urls):
+                subprocess.run(["git", "-C", str(self.repo), "config", "--unset-all", "remote.origin.pushurl"])
+                for url in urls:
+                    self.git("config", "--add", "remote.origin.pushurl", url)
+                for args in [("--preflight",), ()]:
+                    result = self.publish(*args, ok=False)
+                    self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "remote_config"))
+                    self.assertIn("push", result.json["error"])
+                self.assertEqual(self.remote_tip(self.branch), self.head)
+                self.assertEqual(subprocess.check_output(["git", "-C", str(other), "rev-parse", f"refs/heads/{self.branch}"], text=True).strip(), self.head)
+                self.assertEqual(self.report_json()["status"], "failed")
+        subprocess.run(["git", "-C", str(self.repo), "config", "--unset-all", "remote.origin.pushurl"])
+        self.git("config", "--add", "remote.origin.pushurl", str(self.base / "origin.git"))  # identical push URL is fine
+        self.assertEqual(self.publish().json["status"], "pushed")
+
+    def test_publication_writes_only_the_validated_ref(self):
+        ref = self.authorized()
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.git("-c", "user.name=Test", "-c", "user.email=t@example.invalid", "tag", "-a", "-m", "local marker", "report-marker", commit)
+        self.git("config", "push.followTags", "true")
+        self.git("config", "push.recurseSubmodules", "on-demand")
+        self.assertEqual(self.publish().json["status"], "pushed")
+        self.assertEqual(self.remote_tip(self.branch), commit)
+        listing = subprocess.check_output(["git", "-C", str(self.base / "origin.git"), "for-each-ref", "--format=%(refname)"], text=True).split()
+        self.assertEqual(listing, [f"refs/heads/{self.branch}"])
+        proof = self.report_json()["publication"]
+        self.assertEqual(proof["url"], str(self.base / "origin.git"))
+        self.verify_report()
+
+    def test_credentials_never_reach_receipts_or_errors(self):
+        self.authorized()
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.git("remote", "set-url", "origin", "https://user:s3cret@example.invalid/omg/docs.git")
+        result = self.publish(ok=False, extra_env={"GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_COUNT": "1",
+                                                   "GIT_CONFIG_KEY_0": "http.connectTimeout", "GIT_CONFIG_VALUE_0": "1"})
+        self.assertEqual(result.json["reason"], "remote")
+        blob = json.dumps(result.json) + (self.root / "report.json").read_text()
+        self.assertNotIn("s3cret", blob)
+        self.assertIn("https://example.invalid/omg/docs.git", blob)
+
+    def test_malformed_authorized_destination_is_an_error_not_local(self):
+        for pr in [False, True]:
+            with self.subTest(pr=pr):
+                self.setUp()
+                ref = self.authorized(pr)
+                commit = self.commit_report()
+                self.receipt(commit)
+                publication = json.loads((self.root / "publication.json").read_text())
+                for bad in ["origin/main..backup", "origin", "/master", "origin/", "origin/refs/heads/x", "origin/a b",
+                            "origin/-flag", "origin/x.lock", "origin//x", "origin/x/", "origin/x\\y", "", None]:
+                    with self.subTest(remote_ref=bad):
+                        self.write("publication", {**publication, "remote_ref": bad})
+                        stderr = self.verify_report(ok=False).stderr
+                        self.assertIn("remote_ref", stderr)
+                        self.assertNotIn("stays local", stderr)
+                        result = self.publish(ok=False, extra_env={"GIT_SSH_COMMAND": "false"})
+                        self.assertIsNone(result.json)  # the plan itself fails; no disposition, no remote access
+                        self.assertIn("remote_ref", result.stderr)
+                # A finalized receipt whose status contradicts the flags is an error too.
+                self.write("publication", {**publication, "status": "local", "remote_ref": None, "pr_url": None})
+                self.assertIn("publication receipt", self.verify_report(ok=False).stderr)
+                self.write("publication", publication)
+                self.verify_report(ok=False)  # still local; needs publish
+                self.assertEqual(self.publish().json["status"], "pushed")
+
+    def test_receipt_persistence_failure_is_reported_after_remote_success(self):
+        ref = self.authorized()
+        assessed = self.head
+        commit = self.commit_report()
+        before = self.receipt(commit)
+        os.chmod(self.root, 0o555)
+        try:
+            result = self.publish(ok=False)
+        finally:
+            os.chmod(self.root, 0o755)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual((result.json["status"], result.json["destination"], result.json["commit"], result.json["observed"]),
+                         ("receipt_failed", ref, commit, commit))
+        self.assertTrue(result.json["error"])
+        self.assertEqual(self.remote_tip(self.branch), commit)
+        self.assertEqual(self.report_json(), before)  # untouched, still local
+        self.assertIn("publish it to", self.verify_report(ok=False).stderr)
+        # Rerunning after the blocker clears records the already published report.
+        self.assertEqual(self.publish().json, {"status": "pushed", "destination": ref, "commit": commit, "base": commit})
+        self.verify_report()
+        # A failure that cannot be recorded still reports itself, without a success.
+        (self.repo / "app.txt").write_text("more\n")
+        self.commit()
+        unrelated = self.commit_report(self.report_document(revision=assessed) + "\nRetry.\n")
+        self.receipt(unrelated, revision=assessed)
+        os.chmod(self.root, 0o555)
+        try:
+            result = self.publish(ok=False)
+        finally:
+            os.chmod(self.root, 0o755)
+        self.assertEqual((result.returncode, result.json["status"], result.json["reason"]), (1, "failed", "outgoing"))
+        self.assertTrue(result.json["receipt_error"])
+        self.assertEqual(self.remote_tip(self.branch), commit)
+
+    def test_stale_publication_state_is_normalized_when_authority_lapses(self):
+        for stale in [{"status": "pushed", "remote_ref": "origin/master",
+                       "publication": {"destination": "origin/master", "base": "0" * 40, "pushed": "1" * 40}},
+                      {"status": "failed", "remote_ref": None, "reason": "remote", "error": "old auth failure"}]:
+            with self.subTest(stale=stale["status"]):
+                self.setUp()
+                self.add_remote()
+                # The root was canceled after a code push, or the build never authorized publication.
+                if stale["status"] == "pushed":
+                    self.settle(outcome="canceled", publication={"push": True, "open_pr": False},
+                                receipt={"status": "pushed", "remote_ref": "origin/master"})
+                else:
+                    self.settle()
+                commit = self.commit_report()
+                before = self.receipt(commit, build_outcome="canceled" if stale["status"] == "pushed" else "pass", **stale)
+                self.git("remote", "set-url", "origin", "git@example.invalid:omg/docs.git")
+                env = {"GIT_SSH_COMMAND": "false"}
+                self.assertIn("stays local", self.verify_report(ok=False).stderr)
+                preflight = self.publish("--preflight", extra_env=env).json
+                self.assertEqual(preflight, {"status": "preflight", "destination": None, "normalize": True})
+                self.assertEqual(self.report_json(), before)  # preflight never writes
+                self.assertEqual(self.publish(extra_env=env).json, {"status": "local", "destination": None, "normalized": True})
+                receipt = self.report_json()
+                self.assertEqual((receipt["status"], receipt["remote_ref"]), ("local", None))
+                for key in ["reason", "error", "publication"]:
+                    self.assertNotIn(key, receipt)
+                for key in ["operation", "workflow", "build_outcome", "revision", "path", "id", "sha256", "commit"]:
+                    self.assertEqual(receipt[key], before[key])
+                self.verify_report(controller=True)
+                # A clean local receipt is left byte-for-byte alone.
+                raw = (self.root / "report.json").read_bytes()
+                self.assertEqual(self.publish(extra_env=env).json, {"status": "local", "destination": None, "normalized": False})
+                self.assertEqual((self.root / "report.json").read_bytes(), raw)
+
+    def test_preflight_failures_never_touch_the_receipt(self):
+        ref = self.authorized()
+        assessed = self.head
+        commit = self.commit_report()
+        self.receipt(commit)
+        self.assertEqual(self.publish().json["status"], "pushed")
+        self.verify_report()
+        published = (self.root / "report.json").read_bytes()  # a successful publication receipt
+        # 1. Ambiguous push configuration.
+        self.git("config", "--add", "remote.origin.pushurl", str(self.base / "other.git"))
+        result = self.publish("--preflight", ok=False)
+        self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "remote_config"))
+        self.assertEqual((self.root / "report.json").read_bytes(), published)
+        subprocess.run(["git", "-C", str(self.repo), "config", "--unset-all", "remote.origin.pushurl"])
+        # 2. Remote authentication or network unavailable in this session.
+        real = self.git("remote", "get-url", "origin")
+        self.git("remote", "set-url", "origin", "git@example.invalid:omg/docs.git")
+        result = self.publish("--preflight", ok=False, restricted=True, extra_env={"GIT_SSH_COMMAND": "false"})
+        self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "remote"))
+        self.assertIn("Could not read from remote repository", result.json["error"])
+        self.assertEqual((self.root / "report.json").read_bytes(), published)
+        self.verify_report(controller=True)  # the published state is still provable offline
+        self.git("remote", "set-url", "origin", real)
+        # 3. Outgoing history with an unrelated commit below a new report revision.
+        (self.repo / "app.txt").write_text("later unpublished code\n")
+        self.commit()
+        later = self.commit_report(self.report_document(revision=assessed) + "\nRetry.\n")
+        before = self.receipt(later, revision=assessed)
+        raw = (self.root / "report.json").read_bytes()
+        result = self.publish("--preflight", ok=False)
+        self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "outgoing"))
+        self.assertEqual((self.root / "report.json").read_bytes(), raw)
+        self.assertEqual(self.remote_tip(self.branch), commit)
+        # The real attempt still records the same blocker durably.
+        result = self.publish(ok=False)
+        self.assertEqual(result.json["reason"], "outgoing")
+        receipt = self.report_json()
+        self.assertEqual((receipt["status"], receipt["reason"], receipt["commit"]), ("failed", "outgoing", later))
+        self.assertEqual(self.remote_tip(self.branch), commit)
+
+    def test_plan_mode_is_report_only(self):
+        self.mixed_contract()
+        result = subprocess.run([str(PACK / "assets/scripts/verify.sh"), "--root", str(self.root), "--stage", "finalize", "--plan"],
+                                cwd=self.base, env=self.env, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--plan", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

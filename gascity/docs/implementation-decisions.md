@@ -76,3 +76,35 @@ push, or PR submission. The workflow never assumes that a PR is required or that
 submission establishes approval. A checked finalization records the authorized
 handoff without deployment claims. A settled failed build has an explicit,
 deduplicated retry path with separate artifacts; revised specs require new approval.
+
+## Local-only report completion
+
+The first no-push trial left its report bead blocked: the report step required
+canonical Git publication unconditionally, while the build had authorized none.
+The correction makes the report a checked teardown step. The architect commits
+only the report (`git commit --only -- <path>`, so pre-staged user changes stay
+in the index) in the initiative repository, records report.json, and `verify
+--stage report` checks the settled operation, the root's exact terminal outcome
+(`unknown` when absent, never a guessed pass), the validated
+`docs/initiatives/<slug>` directory, single-path commit, hash, frontmatter and
+cited revision, before any remote write. `local` is the complete outcome. The
+report gains no publication authority of its own: it is published only when a
+passed build's finalized publication.json actually published code from the same
+checkout, to exactly that receipt's ref (an `open_pr` build's PR branch, never
+the default branch). A distinct docs repository, a failed, canceled or skipped
+root even with a retained receipt, or a no-push build keeps the report local.
+The controller's formula check runs in a sandbox without the worker's Git
+credentials, so it never contacts a remote; `gc omg report publish` runs in the
+worker session, proves the remote holds the assessed revision and that every
+outgoing commit is report-only (an unrelated unpublished code commit blocks it),
+pushes the exact report SHA with a lease to one effective endpoint (fetch URL
+equal to the single push URL; anything else is rejected rather than widened),
+with tag following and submodule recursion disabled, re-reads the remote and
+records the evidence only after the receipt write is durable. Once a passed
+same-checkout build requested publication, a malformed or missing receipt ref is
+an error, not a local result; when authority lapses, a stale disposition is
+normalized back to local. The offline check verifies that evidence and the local
+objects it names; it does not claim to have verified the live remote. Report completion,
+build outcome and publication status stay separate fields. Separate
+report-publication authorization and any branch or worktree choreography for
+publishing a report apart from its code ancestors are not introduced here.

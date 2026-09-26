@@ -630,8 +630,9 @@ class NativeFormulaTests(unittest.TestCase):
             self.assertIn("omg.architect", names)
             for role in ["builder", "tester", "reviewer"]:
                 self.assertIn("app/omg." + role, names)
-            discovered = subprocess.run(["gc", "--city", str(root), "omg", "verify", "--help"], capture_output=True, text=True)
-            self.assertEqual(discovered.returncode, 0, discovered.stderr)
+            for command in ["verify", "report"]:
+                discovered = subprocess.run(["gc", "--city", str(root), "omg", command, "--help"], capture_output=True, text=True)
+                self.assertEqual(discovered.returncode, 0, discovered.stderr)
             for formula in ["omg-docs", "omg-refine", "omg-build", "omg-work"]:
                 with self.subTest(formula=formula):
                     result = subprocess.run(["gc", "formula", "show", formula,
@@ -666,6 +667,15 @@ class NativeFormulaTests(unittest.TestCase):
                         # formula show substitutes display prose but leaves
                         # metadata placeholders for runtime instantiation.
                         self.assertEqual(report["metadata"]["gc.run_target"], "{{omg_binding}}.architect")
+                        # The checked teardown keeps its control in the post-settlement
+                        # tail: the ralph control retains the teardown role and the
+                        # attempt links back through gc.step_id, so neither gates finalize.
+                        self.assertEqual(report["metadata"]["gc.kind"], "ralph")
+                        self.assertEqual(report["metadata"]["gc.step_id"], "omg-report")
+                        attempt = steps["omg-build.omg-report.iteration.1"]["metadata"]
+                        self.assertEqual(attempt["omg.stage"], "report")
+                        self.assertEqual(attempt["gc.step_id"], "omg-report")
+                        self.assertIn("omg.artifact_root", attempt)
                         self.assertEqual(steps["omg-build.implement"]["metadata"]["gc.kind"], "drain")
                         for step, stage in [("plan", "plan"), ("decompose", "decompose"), ("quality", "quality"), ("omg-reconcile", "reconcile")]:
                             subject = steps[f"omg-build.{step}.iteration.1"]["metadata"]
@@ -690,6 +700,8 @@ class NativeFormulaTests(unittest.TestCase):
                         self.assertFalse(any("omg-input" in key for key in steps))
                         self.assertFalse(any("gc.build" in json.dumps(s) for s in steps.values()))
                         self.assertFalse(depends_on("omg-build.workflow-finalize", "omg-build.omg-report"))
+                        self.assertFalse(depends_on("omg-build.workflow-finalize", "omg-build.omg-report.iteration.1"))
+                        self.assertTrue(depends_on("omg-build.omg-report.iteration.1", "omg-build.omg-build-body"))
                     else:
                         self.assertEqual(formula + ".prd" in steps, formula == "omg-docs")
                         for suffix, role in [("review-product", "product-manager"), ("review-technical", "architect")]:

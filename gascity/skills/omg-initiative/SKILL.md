@@ -250,7 +250,7 @@ City initiatives stay in city docs. Select the rig being built; launch other
 rigs only when the human requests them, respecting approved dependency ordering.
 Do not infer that starting one rig authorizes every rig. Hindsight ingestion is
 independent. Discuss `--push true` and `--open-pr true` separately when applicable;
-the build defaults leave code local.
+the build defaults leave code and the build report local.
 
 Start checks the required local tools and freezes the approved spec bytes. It
 writes baseline.json under an operation-specific absolute artifact root, records
@@ -306,6 +306,14 @@ unauthorized deviation does not approve it. Name unresolved risks and follow-up.
 Distinguish implemented, reviewed, and actually published/integrated code. Do not
 imply merge or post-merge verification without evidence. A build root may close
 before post-settlement reporting finishes. Check the report work bead separately.
-Persist and publish the Markdown report even when the build failed; if report
-publication fails, preserve the artifact, error and recoverable reporting bead.
-Hindsight retrieves accepted direction separately from implementation evidence.
+Commit the Markdown report alone (`git commit --only -- <path>`) in the initiative
+repository even when the build failed; the report step is checked (`verify --stage
+report`) and completes with that local commit. Report publication is authorized
+only by a passed build's own finalized publication receipt, to exactly its
+published ref, and only when the initiative repository is the rig checkout that
+receipt published; a distinct docs repository or an unpublished, failed or
+canceled build keeps the report local. `gc omg report publish` does the remote
+work under the worker's Git identity; the controller check is offline. If
+authorized publication fails, preserve the local commit, error and recoverable
+reporting bead. Hindsight retrieves accepted direction separately from
+implementation evidence.

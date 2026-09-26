@@ -64,7 +64,7 @@ flowchart TD
     CHECK{"Controller runs quality gate after review<br/>Exact successful native manifest, item workflows and finalizers<br/>Current passing receipts; required findings resolved"}
     RECON["Write reconciliation and pass execution/evidence gate<br/>Downstream pending; required test artifacts delivered<br/>Optional settlement preview/apply with advertised revision CAS<br/>Unsupported or conflicting bookkeeping stays explicit and pending"]
     FINAL["OMG finalization and authorized local/push/PR handoff<br/>Single checked publication receipt<br/>No deployment or PR-approval claim"]
-    REPORT["Post-workflow-settlement architect report<br/>Success, partial, blocked and failed builds<br/>Assessed SHA; implemented vs reviewed vs published<br/>Pending source IDs/reasons; local-only publication blockers"]
+    REPORT["Post-workflow-settlement architect report; checked teardown, up to 3 attempts<br/>Success, partial, blocked, failed and canceled builds; exact root outcome<br/>Assessed SHA; implemented vs reviewed vs published; pending source IDs/reasons<br/>Path-only report commit in the initiative repository; local is complete"]
     SHIP["Canonical remote Markdown revisions<br/>Existing Hindsight pipeline and receipts"]
     RETRY{{"Human explicitly requests retry of settled failed build"}}
     RETRYCHECK["Verify failed root, same rig and approval, no active attempt<br/>New operation/source/artifacts; preserve old report<br/>Repeated retry request returns its receipt"]
@@ -97,7 +97,7 @@ flowchart TD
     TALK -.->|"authored summary"| SHIP
     REFINE -.->|"drafts can publish repeatedly"| SHIP
     ACCEPTED -.-> SHIP
-    REPORT -->|"report publication succeeds"| SHIP
+    REPORT -->|"passed root, same checkout, finalized code receipt only: report publish pushes the exact SHA to that ref under worker identity"| SHIP
     REPORT -.->|"failed run; unchanged approval"| RETRY --> RETRYCHECK --> PREP
     REPORT -.->|"requirements change"| EDIT
 ```
@@ -117,7 +117,9 @@ drafts. Engine outcome and semantic operation result are separate: a native pass
 without passing reviews is incomplete, and human interruption is needs-human.
 Native scope teardown preserves reporting after
 build failure and after the root settles. A terminal build root therefore does
-not prove that its reporting assignment finished.
+not prove that its reporting assignment finished; the report step carries its own
+check, whose control and attempts stay in the post-settlement tail without
+regrading the root.
 
 Readiness checks compare the reviewed Git inventory and bytes without invoking
 `yq`; unresolved human decisions cannot be marked ready. Native check executables
@@ -158,9 +160,26 @@ without mutation. Reports
 list pending source IDs and reasons separately from code quality. Other settlement
 conflicts and partial results remain explicit without a settlement or overall
 completion claim. No unconditional closure or `gc.source_bead_id` retrofit is
-allowed. Failed runs preserve source tasks and findings. The current no-push report
-path can block its reporting bead on publication requirements; a local report is
-not completed publication or Hindsight shipping.
+allowed. Failed runs preserve source tasks and findings. After `initiative settle`
+records the terminal root, the architect commits only the report (`git commit
+--only`) in the initiative repository and records report.json; `verify --stage
+report` checks the settled operation, the root's exact outcome (`unknown` when
+absent), the validated `docs/initiatives/<slug>` path, single-path commit, hash,
+frontmatter and cited revision before any remote write. `local` is the complete
+outcome and is neither publication nor Hindsight shipping. The report is published
+only when a passed build's finalized publication receipt pushed code from the
+same checkout, to exactly that receipt's ref (the PR branch for `open_pr`). The
+controller check is offline (its sandbox has no worker Git credentials), so `gc
+omg report publish` runs in the architect's session: it requires the remote tip
+to contain the assessed revision and every outgoing commit to be report-only,
+pushes the exact report SHA with a lease to one validated endpoint (fetch URL
+equal to the single push URL, no tag or submodule side effects), re-reads the
+remote and records the evidence, printing success only after that write lands;
+the check then verifies the evidence against local objects. A distinct docs
+repository or a non-passed root stays local (stale dispositions are normalized);
+an ambiguous push configuration, a malformed authorized ref, an unrelated
+outgoing commit or a moved remote fails closed; a failed authorized push records
+its reason and Git error and stays recoverable on the report step.
 
 Hindsight receives eligible authored Markdown only. IR, HTML, comparison evidence,
 raw reviews, chat, mail and bead chatter are excluded, including attachments.

@@ -1,6 +1,6 @@
 ---
 name: omg-build
-description: Execute a Gas City OMG build step or work item. Use when assigned an omg-build or omg-work formula bead, including planning, decomposition, implementation, testing, review, reconciliation and finalization.
+description: Execute a Gas City OMG build step or work item. Use when assigned an omg-build or omg-work formula bead, including planning, decomposition, implementation, testing, review, reconciliation, finalization and the post-settlement report.
 ---
 
 # OMG build execution
@@ -106,6 +106,51 @@ obtainable with `shasum -a 256 <file>`. Published reports use `hindsight-shippin
   --stage finalize` checks it for consistency with the baseline authorization
   and the assessed revision; it runs offline, contacts no remote, and neither
   proves that the push or PR happened nor that nothing was pushed.
+- `report.json` is the post-settlement report receipt, checked by `verify --stage
+  report` after the build root settles and `initiative settle` has recorded it:
+  `operation`; `workflow` (the settled root, as recorded on the operation);
+  `build_outcome` (the root's exact terminal `gc.outcome`: `pass`, `fail`,
+  `skipped` or `canceled`, or `unknown` when the root carries none of these;
+  distinct from this step's own outcome); `revision` (the assessed code commit;
+  for a passed build this must equal publication.json's revision); `path` (the
+  initiative-repository path `docs/initiatives/<slug>/reports/<operation>.md`);
+  `id` (the document ID, `build-report.<slug>.<operation>`); `sha256` of the
+  committed report; `commit` (the report commit in the initiative repository,
+  made with `git commit --only -- <path>`, which must change only that path); and
+  `status`. Publication authority comes only from the build's own finalized
+  publication.json for a PASSED root, and only when the initiative repository is
+  the rig checkout it published from: `pushed` for `push`, `pr-open` for
+  `open_pr`, with the report's destination being exactly that receipt's
+  `remote_ref` (the PR branch for `open_pr`, never the default branch); once
+  those conditions hold, a missing, malformed or contradicting receipt is an
+  error, never a local result. In every other case (no `push`/`open_pr`, a
+  failed, canceled, skipped or unknown root even with a retained receipt, or a
+  distinct initiative repository) `status: "local"` with `remote_ref: null` is
+  the complete, passing outcome, not a blocker, and nothing is pushed; `report
+  publish` normalizes a stale `pushed`/`failed` disposition back to that shape
+  and keeps the artifact fields.
+  Remote work is never done by the controller check, which runs offline in a
+  sandbox without the worker's Git credentials. `gc <binding> report publish
+  --root <artifact_root>` runs in the worker session: it repeats the local
+  validation, then when authorized resolves one endpoint (the remote's fetch
+  URL, which must equal its single push URL), reads that tip, requires it to
+  contain the assessed revision, requires only report-only commits between that
+  tip and the report commit, pushes the exact report SHA to that endpoint with a
+  lease and with tag following and submodule recursion disabled, re-reads it
+  and records `status: "pushed"`, `remote_ref`, and `publication`
+  `{destination, remote, branch, url, base, pushed, observed, revision,
+  report_blob, at}`. The controller check then requires that evidence to name
+  this commit, blob, revision and destination, `base` to be a locally available
+  commit containing the revision, and every commit in `base..commit` to be
+  report-only. That is the trust boundary: the worker attests the remote
+  observation; the controller verifies its consistency and the local objects,
+  not the live remote. A blocker or remote failure records `status: "failed"`,
+  `reason` and the retained Git `error`; the check fails with that blocker and
+  the local commit stays recoverable on the report step. Success is printed
+  only after the receipt write is durable; a push that succeeded without a
+  persisted receipt exits 2 (`receipt_failed`) and is recorded by a rerun. Unrelated dirty,
+  untracked or pre-staged files in the initiative repository are neither required
+  to be clean nor allowed into the report commit.
 
 Example verification receipt:
 
