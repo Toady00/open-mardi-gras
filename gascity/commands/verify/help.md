@@ -29,9 +29,21 @@ build must still have its publication receipt). It checks report.json against
 the settled operation and terminal root, whose exact `gc.outcome` the receipt
 repeats (`unknown` when the root has none): the initiative directory is
 `docs/initiatives/<slug>`, the report commit contains only
-`<directory>/reports/<operation>.md`, matches the recorded hash and the working
-copy, carries schema 2 agent-authored `build-report` frontmatter with a unique
-ID, and cites the assessed revision and operation. Publication is required only
+`<directory>/reports/build-report.md`, matches the recorded hash and the working
+copy, carries schema 2 agent-authored `build-report` frontmatter with stable ID
+`build-report.<initiative-bead-id>`, and cites the assessed code revision, operation,
+approved spec revision and snapshot digest. Before completion the working copy
+must match the receipt. Completed operations check their pinned committed artifact,
+even after another rig updates the maintained report; `--plan` and publication
+refuse completed operations. Historical receipts are preserved. The initiative
+must have granted `begin-report` ownership, and the
+commit's parent report blob must match the acquired baseline. After `finish-report`,
+the completion pin must match the receipt. The native controller check requires
+that completion and released ownership; the worker-side check permits ownership
+so finish-report can validate before pinning. The target rig's standalone body lines
+`Assessed rig:`, `Approved spec revision:` and `Approved spec digest:` explicitly
+identify its baseline; the digest embedded in the operation key is insufficient.
+Publication is required only
 for a passed root in the same checkout whose build requested `push`/`open_pr`;
 its finalized publication.json must then record the matching handoff for the
 assessed revision with a well-formed `<remote>/<branch>` `remote_ref` (checked

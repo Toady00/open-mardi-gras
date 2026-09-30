@@ -47,6 +47,76 @@ Use `gc bd update <id> --set-metadata key=value` for individual metadata fields.
 Find the owning workflow through `gc.root_bead_id`. Query the engine's command
 help when the current CLI differs; do not invent an orchestration loop.
 
+## Cumulative initiative build report
+
+Maintain one report at `docs/initiatives/<slug>/reports/build-report.md` in the
+initiative's original repository, with stable ID `build-report.<initiative-bead-id>`.
+Resolve that repository and directory from the initiative's `omg.state`, not from
+the target rig's working directory. The report describes cumulative implementation
+against the latest assessed approved specs, as one coherent current assessment.
+For a multi-rig initiative, keep each rig's assessed spec revision/digest, code SHA,
+requirement outcomes and evidence distinct within this one document.
+
+Before planning, read this report if it exists. Compare the target rig's approved spec
+revision and snapshot digest with baseline.json, and inspect the repository for
+changes since its assessed code SHA. Reassess affected requirements against the
+new approved bytes; a changed baseline makes an assessment potentially stale,
+not proof that the implementation must be rebuilt. Obtain current conventions
+through Hindsight's model catalog and fetch relevant models, including Conventions
+and Standards when available; if reads fail, record the context gap in plan.md.
+The report does not freeze conventions. Record what can be reused, what must
+change and what needs verification in plan.md. If no report exists, assess the
+repository directly.
+
+After settlement, acquire exclusive initiative report ownership with
+`initiative begin-report <initiative> --operation <operation>` before reading or
+editing. A competing owner blocks editing; finish that report before acquiring
+another. If completion is already pinned, verify the historical receipt and close
+the step without editing or publishing again. Otherwise, on retries validate an existing report.json with `verify --stage report
+--root <artifact_root> --plan` first; a valid artifact resumes publication/verification
+without editing or resetting its acquired base. When editing is necessary,
+re-enter ownership and merge into the current assessment, not an older draft.
+The same owner resumes interrupted edits or reconstructs a missing receipt for
+its report-only commit without resetting report_base. An intentional subsequent
+draft uses `begin-report ... --revision <current-initiative-repository-HEAD>`.
+The acquired report blob must match the new commit's parent;
+the verifier rejects intervening changes. After successful publication/verification,
+`initiative finish-report <initiative> --operation <operation>` checks the receipt,
+records completion and releases ownership. Failed reporting retains ownership for
+recovery. A new start waits when a settled report is pending or owned; concurrent
+rig execution can continue, but report editing is serialized. Completed operations
+cannot reacquire the report and overwrite a newer assessment.
+
+Edit the report in place, or create it from the assessed repository if absent.
+Preserve still-valid assessments and
+evidence, including other rigs' sections; update changed outcomes, remove resolved
+failures and obsolete requirements, and assess new requirements. A deviation is
+relative to the currently assessed spec: if the new spec incorporates an earlier
+modification, it is no longer a deviation. Keep evidence revisions and limits
+accurate; retained evidence does not become a fresh test run merely by updating
+the report. Distinguish implemented, verified, published and downstream-accepted
+state. A planning failure with no code change does not erase previously verified
+work; changed code may invalidate prior evidence even if this run failed.
+
+Include the approved spec commit and snapshot digest, assessed code SHA, and the
+assessing operation as provenance for the target rig. Do not advance another rig's
+baseline without assessing it. Preserve document ID and created_at; update
+updated_at and follow `hindsight-shipping` for agent-revised approval provenance.
+Write requirement outcomes and remaining differences/limitations, not an attempt
+history, small iteration log, conventions catalog or lessons-learned section.
+Execution outcomes, repaired findings and retry history belong in operation
+receipts and beads. Outstanding source bookkeeping can remain an actionable gap;
+resolved bookkeeping disappears from the current report.
+
+Each assessed rig section includes standalone body lines `Assessed rig: <rig>`,
+`Approved spec revision: <commit>` and `Approved spec digest: <digest>` so the
+spec baseline is explicit rather than inferred from the operation key.
+
+Example: x is implemented, y differs from the spec, and z is blocked. A later
+approved snapshot changes z; existing x and y remain valid and the new z passes.
+Keep x and y's assessments, update z to implemented, and remove z's old failure.
+If that snapshot also adopts y's modification, report y as conforming instead.
+
 ## Record contract
 
 These are OMG execution records, not published-document schemas. Every path below
@@ -69,7 +139,10 @@ obtainable with `shasum -a 256 <file>`. Published reports use `hindsight-shippin
   original specs. Hash/quote checks alone cannot establish completeness.
 - `decomposition.json`: `workflow`, `convoy`, and `items`, each containing `id` and
   `requirements` as an array of development requirement IDs. Their union matches
-  all plan IDs except `downstream-check`. A separate `downstream` array retains
+   all plan IDs except `downstream-check`. For already compliant requirements,
+   assign verification/reuse work rather than unnecessary implementation changes;
+   current integrated checks and review still cover the cumulative implementation.
+   A separate `downstream` array retains
   every downstream ID with its approved `owner` and `stage`, even when no builder
   work is assigned to it. Use `downstream: []` when there are none.
   Work bead descriptions hold precise scope, dependency IDs and test expectations.
@@ -113,8 +186,8 @@ obtainable with `shasum -a 256 <file>`. Published reports use `hindsight-shippin
   `skipped` or `canceled`, or `unknown` when the root carries none of these;
   distinct from this step's own outcome); `revision` (the assessed code commit;
   for a passed build this must equal publication.json's revision); `path` (the
-  initiative-repository path `docs/initiatives/<slug>/reports/<operation>.md`);
-  `id` (the document ID, `build-report.<slug>.<operation>`); `sha256` of the
+  initiative-repository path `docs/initiatives/<slug>/reports/build-report.md`);
+  `id` (the stable document ID, `build-report.<initiative-bead-id>`); `sha256` of the
   committed report; `commit` (the report commit in the initiative repository,
   made with `git commit --only -- <path>`, which must change only that path); and
   `status`. Publication authority comes only from the build's own finalized
@@ -150,7 +223,11 @@ obtainable with `shasum -a 256 <file>`. Published reports use `hindsight-shippin
   only after the receipt write is durable; a push that succeeded without a
   persisted receipt exits 2 (`receipt_failed`) and is recorded by a rerun. Unrelated dirty,
   untracked or pre-staged files in the initiative repository are neither required
-  to be clean nor allowed into the report commit.
+   to be clean nor allowed into the report commit. Each operation receipt pins its
+   own report revision; a later update does not rewrite old receipts. Completed
+   operations verify their pinned committed artifact even while another rig edits
+   the current report; the controller requires completion and released ownership.
+   `--plan`/publication refuse completed operations, preventing stale republishing.
 
 Example verification receipt:
 

@@ -294,14 +294,18 @@ publication on a retry is refused. Present that as a separate request to the hum
 
 ## Build report
 
-Reconcile implementation against pinned specs before native finalization.
-After settlement, the architect writes the report for successful, partial, failed
-and blocked outcomes, including when native finalization or publication failed.
-The report identifies initiative, launch operation, approved direction and spec
-commit/digest, assessed code SHA, and each stable requirement's implemented,
-partial, deferred or blocked outcome. Cite implementation and verification
-evidence. Explain deviations, reasons and decision authority; reporting an
-unauthorized deviation does not approve it. Name unresolved risks and follow-up.
+The initiative has one maintained report at
+`docs/initiatives/<slug>/reports/build-report.md`, with stable ID
+`build-report.<initiative-bead-id>`. Follow the `omg-build` skill's cumulative
+report procedure during planning and after settlement. Planning reads the existing
+assessment alongside pinned approved specs, current Hindsight context and actual
+code. Reporting edits that assessment for successful, partial, failed and blocked
+outcomes, including when native finalization or publication failed. Preserve valid
+implementation evidence, update changed requirements and remove resolved gaps.
+The report identifies the assessed spec commit/digest and code SHA for each rig,
+and each current requirement's outcome, evidence and remaining deviations.
+Reporting an unauthorized deviation does not approve it. Execution history stays
+in operation artifacts and beads rather than accumulating in the report.
 
 Distinguish implemented, reviewed, and actually published/integrated code. Do not
 imply merge or post-merge verification without evidence. A build root may close

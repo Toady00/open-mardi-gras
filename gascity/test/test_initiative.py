@@ -253,6 +253,71 @@ class LaunchTests(GitFixture):
         self.ledger_patch.start()
         self.addCleanup(self.ledger_patch.stop)
 
+    def test_settled_build_without_completed_report_blocks_new_launch(self):
+        key, root = self.settled_build()
+        self.state["operations"][key].pop("report_complete")
+        self.assertNotIn("report_required", self.state["operations"][key])
+        with patch.object(m, "gc", return_value=root) as command:
+            with self.assertRaisesRegex(ValueError, "report is pending"):
+                self.invoke("start", "city-123", "--retry", key, "--authority", "retry")
+        self.assertEqual(len(self.state["operations"]), 1)
+        self.assertEqual(command.call_count, 1)  # prior-root inspection only, no new source or dispatch
+
+    def test_report_ownership_serializes_writers_and_cannot_be_reacquired_after_completion(self):
+        key, root = self.settled_build()
+        self.state["operations"][key].pop("report_complete")
+        self.invoke("begin-report", "city-123", "--operation", key)
+        self.assertEqual(self.state["report_owner"], key)
+        self.assertIsNone(self.state["operations"][key]["report_base"])
+        self.state["operations"]["other-rig"] = copy.deepcopy(self.state["operations"][key])
+        with self.assertRaisesRegex(ValueError, "owned by"):
+            self.invoke("begin-report", "city-123", "--operation", "other-rig")
+        with patch.object(m, "gc", return_value=root):
+            with self.assertRaisesRegex(ValueError, "report is pending"):
+                self.invoke("start", "city-123", "--retry", key, "--authority", "retry")
+        with patch.object(m, "run", side_effect=ValueError("report verification failed")):
+            with self.assertRaisesRegex(ValueError, "verification failed"):
+                self.invoke("finish-report", "city-123", "--operation", key)
+        self.assertEqual(self.state["report_owner"], key)
+        op = self.state["operations"][key]
+        (Path(op["artifact_root"]) / "report.json").write_text(m.encoded(dict(commit="a" * 40, sha256="b" * 64)))
+        with patch.object(m, "run", return_value=b'{"outcome":"pass"}'):
+            self.invoke("finish-report", "city-123", "--operation", key)
+        self.assertNotIn("report_owner", self.state)
+        self.assertEqual(self.state["operations"][key]["report_complete"]["commit"], "a" * 40)
+        with self.assertRaisesRegex(ValueError, "complete"):
+            self.invoke("begin-report", "city-123", "--operation", key)
+        self.invoke("begin-report", "city-123", "--operation", "other-rig")
+        self.assertEqual(self.state["report_owner"], "other-rig")
+
+    def test_report_acquisition_preserves_dirty_report_and_cas_conflicts(self):
+        key, _ = self.settled_build()
+        self.state["operations"][key].pop("report_complete")
+        report = self.docs / "reports/build-report.md"
+        report.parent.mkdir()
+        report.write_text("uncommitted assessment\n")
+        with self.assertRaisesRegex(ValueError, "uncommitted"):
+            self.invoke("begin-report", "city-123", "--operation", key)
+        self.assertEqual(report.read_text(), "uncommitted assessment\n")
+        self.commit()
+        with patch.object(m.Ledger, "save", side_effect=ValueError("CAS conflict")):
+            with self.assertRaisesRegex(ValueError, "CAS conflict"):
+                self.invoke("begin-report", "city-123", "--operation", key)
+        self.assertNotIn("report_owner", self.state)
+        self.invoke("begin-report", "city-123", "--operation", key)
+        self.assertEqual(self.state["operations"][key]["report_base"],
+                         m.git(self.repo, "rev-parse", f"HEAD:{self.directory}/reports/build-report.md").decode().strip())
+        acquired = self.state["operations"][key]["report_base"]
+        report.write_text("owner's interrupted edit\n")
+        self.invoke("begin-report", "city-123", "--operation", key)
+        self.assertEqual(self.state["operations"][key]["report_base"], acquired)
+        self.assertEqual(report.read_text(), "owner's interrupted edit\n")
+        committed = self.commit()
+        self.invoke("begin-report", "city-123", "--operation", key)  # commit exists, receipt was lost
+        self.assertEqual(self.state["operations"][key]["report_base"], acquired)
+        self.invoke("begin-report", "city-123", "--operation", key, "--revision", committed)  # intentional new draft
+        self.assertNotEqual(self.state["operations"][key]["report_base"], acquired)
+
     def test_approval_does_not_launch(self):
         with patch.object(m, "gc") as command:
             self.invoke("accept", "city-123", "--authority", "human approved in session 1")
@@ -411,7 +476,7 @@ class LaunchTests(GitFixture):
         with patch.object(m, "gc", side_effect=[{"id": "source-1"}, {"workflow_id": "build-root"}]):
             self.invoke("start", "city-123", "--authority", "build locally")
         key = next(iter(self.state["operations"]))
-        self.state["operations"][key].update(phase="settled", workflow="build-root", outcome="fail")
+        self.state["operations"][key].update(phase="settled", workflow="build-root", outcome="fail", report_complete={"commit": "reported"})
         root = {"id": "build-root", "status": "closed", "metadata": {
             "gc.kind": "workflow", "gc.outcome": "fail", "gc.var.operation": key, "gc.var.initiative": "city-123",
             "gc.formula_name": "omg-build", "gc.root_store_ref": "rig:app"}}
@@ -481,7 +546,7 @@ class LaunchTests(GitFixture):
         with patch.object(m, "gc", side_effect=[{"id": "source-1"}, {"workflow_id": "build-root"}]):
             self.invoke("start", "city-123", "--authority", "push it", "--push", "true")
         key = next(iter(self.state["operations"]))
-        self.state["operations"][key].update(phase="settled", workflow="build-root", outcome="fail")
+        self.state["operations"][key].update(phase="settled", workflow="build-root", outcome="fail", report_complete={"commit": "reported"})
         root = {"id": "build-root", "status": "closed", "metadata": {
             "gc.kind": "workflow", "gc.outcome": "fail", "gc.var.operation": key, "gc.var.initiative": "city-123",
             "gc.formula_name": "omg-build", "gc.root_store_ref": "rig:app"}}
@@ -501,7 +566,7 @@ class LaunchTests(GitFixture):
         self.assertEqual(self.baseline_of(retry)["publication"], {"push": True, "open_pr": False})
         self.assertIn("push=true", command.call_args_list[2].args)
         self.assertIn("open_pr=false", command.call_args_list[2].args)
-        self.state["operations"][retry_key].update(phase="settled", workflow="root-2", outcome="fail")
+        self.state["operations"][retry_key].update(phase="settled", workflow="root-2", outcome="fail", report_complete={"commit": "reported"})
         root2 = self.failed_root(root, "root-2", retry_key)
         with patch.object(m, "gc", side_effect=[root2, {"id": "source-3"}, {"workflow_id": "root-3"}]) as command:
             self.invoke("start", "city-123", "--retry", retry_key, "--authority", "retry again")
@@ -518,7 +583,7 @@ class LaunchTests(GitFixture):
                 patch.object(m, "gc", side_effect=[root, {"id": "source-2"}, {"workflow_id": "root-2"}]):
             self.invoke("start", "city-123", "--retry", key, "--authority", "retry 1")
         first = next(k for k in self.state["operations"] if k != key)
-        self.state["operations"][first].update(phase="settled", workflow="root-2", outcome="fail")
+        self.state["operations"][first].update(phase="settled", workflow="root-2", outcome="fail", report_complete={"commit": "reported"})
         with patch.object(m.uuid, "uuid4", side_effect=uuids[1:]), \
                 patch.object(m, "gc", side_effect=[self.failed_root(root, "root-2", first), {"id": "source-3"}, {"workflow_id": "root-3"}]):
             self.invoke("start", "city-123", "--retry", first, "--authority", "retry 2")

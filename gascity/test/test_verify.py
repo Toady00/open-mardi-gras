@@ -532,7 +532,7 @@ else:
 
     # Post-settlement report. By default the initiative repository is the rig
     # checkout, so the report commit sits on top of local, unpushed code commits.
-    REPORT_PATH = "docs/initiatives/city-1/reports/build-1.md"
+    REPORT_PATH = "docs/initiatives/city-1/reports/build-report.md"
 
     def settle(self, outcome="pass", publication=None, receipt=None, separate_docs=False):
         self.mixed_contract()
@@ -551,8 +551,10 @@ else:
             self.docs_git("add", "README.md")
             self.docs_commit("docs")
         self.state.update(repo=str(self.docs), directory="docs/initiatives/city-1", slug="city-1")
-        self.state["operations"]["build-1"].update(phase="settled", workflow="workflow-1", outcome=outcome,
+        self.state["operations"]["build-1"].update(phase="settled", workflow="workflow-1", outcome=outcome, rig="app",
                                                    publication=self.baseline["publication"])
+        self.state["report_owner"] = "build-1"
+        self.state["operations"]["build-1"]["report_base"] = None
         self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
         self.beads["workflow-1"].update(status="closed")
         if outcome is None:
@@ -575,22 +577,30 @@ else:
                       "commit", "-qm", message, *args)
         return self.docs_git("rev-parse", "HEAD")
 
-    def report_document(self, revision=None, identity="build-report.city-1.build-1", status="draft", source="agent"):
+    def report_document(self, revision=None, identity="build-report.city-1", status="draft", source="agent"):
         return (f"---\nschema_version: 2\nid: {identity}\ntype: build-report\ntitle: Build report\n"
                 f"status: {status}\nsource: {source}\nscope: repo\ncreated_at: 2026-09-26T00:00:00Z\n"
-                f"updated_at: 2026-09-26T00:00:00Z\n---\nOperation build-1 assessed revision {revision or self.head}.\n")
+                f"updated_at: 2026-09-26T00:00:00Z\n---\nOperation {self.baseline['operation']} assessed revision {revision or self.head}.\n"
+                f"Assessed rig: app\nApproved spec revision: {self.baseline['revision']}\n"
+                f"Approved spec digest: {self.baseline['digest']}\n")
 
     def commit_report(self, content=None, only=True):
         """The documented path-only commit; only=False is a careless plain commit."""
         doc = self.docs / self.REPORT_PATH
+        previous = subprocess.run(["git", "-C", str(self.docs), "rev-parse", "--verify", f"HEAD:{self.REPORT_PATH}"],
+                                  capture_output=True, text=True)
+        operation = self.baseline["operation"]
+        self.state["report_owner"] = operation
+        self.state["operations"][operation]["report_base"] = previous.stdout.strip() if previous.returncode == 0 else None
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
         doc.parent.mkdir(parents=True, exist_ok=True)
         doc.write_text(content or self.report_document())
         self.docs_git("add", "--", self.REPORT_PATH)
         return self.docs_commit("docs: build report", *(["--only", "--", self.REPORT_PATH] if only else []))
 
     def receipt(self, commit, **overrides):
-        record = {"operation": "build-1", "workflow": "workflow-1", "build_outcome": "pass", "revision": self.head,
-                  "path": self.REPORT_PATH, "id": "build-report.city-1.build-1",
+        record = {"operation": self.baseline["operation"], "workflow": "workflow-1", "build_outcome": "pass", "revision": self.head,
+                  "path": self.REPORT_PATH, "id": "build-report.city-1",
                   "sha256": self.hash(self.docs / self.REPORT_PATH), "commit": commit,
                   "status": "local", "remote_ref": None}
         record.update(overrides)
@@ -600,6 +610,13 @@ else:
     def verify_report(self, ok=True, controller=False):
         args = {"controller": True, "restricted": True} if controller else {}
         return self.verify("report", ok=ok, **args)
+
+    def complete_report(self):
+        record = self.report_json()
+        self.state["operations"][record["operation"]]["report_complete"] = {
+            "commit": record["commit"], "sha256": record["sha256"]}
+        self.state.pop("report_owner", None)
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
 
     def add_remote(self):
         remote = self.base / "origin.git"
@@ -612,6 +629,7 @@ else:
         commit = self.commit_report()
         self.receipt(commit)
         self.verify_report()
+        self.complete_report()
         self.verify_report(controller=True)
         self.assertEqual(self.git("diff-tree", "--no-commit-id", "--name-only", "-r", commit), self.REPORT_PATH)
         self.assertIn("?? notes.txt", self.git("status", "--porcelain"))
@@ -688,7 +706,7 @@ else:
         (self.repo / self.REPORT_PATH).write_text("edited after commit\n")
         self.assertIn("changed after", self.verify_report(ok=False).stderr)
         later = self.commit_report(self.report_document() + "\nRetry addendum.\n")
-        self.assertIn("changed after", self.verify_report(ok=False).stderr)  # receipt names the superseded commit
+        self.assertIn("base changed", self.verify_report(ok=False).stderr)  # receipt names the superseded commit
         self.receipt(later)  # a re-committed report with a fresh receipt is the retry path
         self.verify_report()
 
@@ -709,12 +727,12 @@ else:
         self.verify_report()
         # A legitimate multi-segment slug works end to end.
         self.setUp()
-        self.REPORT_PATH = "docs/initiatives/my-init-2/reports/build-1.md"
+        self.REPORT_PATH = "docs/initiatives/my-init-2/reports/build-report.md"
         self.settle()
         self.state.update(directory="docs/initiatives/my-init-2", slug="my-init-2")
         self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
-        commit = self.commit_report(self.report_document(identity="build-report.my-init-2.build-1"))
-        self.receipt(commit, id="build-report.my-init-2.build-1")
+        commit = self.commit_report()
+        self.receipt(commit)
         self.verify_report()
 
     def test_report_frontmatter_and_content_are_checked(self):
@@ -723,13 +741,106 @@ else:
                         self.report_document(status="accepted", source="human"),
                         self.report_document(source="human"),
                         self.report_document().replace("type: build-report", "type: spec"),
-                        self.report_document(revision="c" * 40)]:
+                         self.report_document(revision="c" * 40),
+                         self.report_document().replace(self.baseline["revision"], "d" * 40),
+                         self.report_document().replace(self.baseline["digest"], "e" * 64)]:
             commit = self.commit_report(content)
             self.receipt(commit)
             self.verify_report(ok=False)
         commit = self.commit_report()
         self.receipt(commit, id="build-report.other")
-        self.assertIn("frontmatter", self.verify_report(ok=False).stderr)
+        self.assertIn("identity", self.verify_report(ok=False).stderr)
+
+    def test_operation_specific_path_and_identity_are_rejected(self):
+        self.settle()
+        commit = self.commit_report()
+        self.receipt(commit, path="docs/initiatives/city-1/reports/build-1.md")
+        self.verify_report(ok=False)
+        # Matching frontmatter and receipt still cannot mint a new document per run.
+        commit = self.commit_report(self.report_document(identity="build-report.city-1.build-1"))
+        self.receipt(commit, id="build-report.city-1.build-1")
+        self.verify_report(ok=False)
+
+    def test_report_requires_ownership_and_matching_previous_blob(self):
+        self.settle()
+        first = self.commit_report()
+        self.receipt(first)
+        self.state["report_owner"] = "other-operation"
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.assertIn("ownership", self.verify_report(ok=False).stderr)
+        second = self.commit_report(self.report_document() + "\nUpdated assessment.\n")
+        self.receipt(second)
+        self.verify_report()
+        self.state["operations"]["build-1"]["report_base"] = None  # draft was read before first committed
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.assertIn("base changed", self.verify_report(ok=False).stderr)
+
+    def test_controller_requires_completion_and_checks_history_after_next_writer(self):
+        self.settle()
+        first = self.commit_report()
+        first_receipt = self.receipt(first)
+        self.assertIn("finish-report", self.verify_report(ok=False, controller=True).stderr)
+        self.complete_report()
+        self.verify_report(controller=True)
+        self.state["report_owner"] = "other-rig"
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        (self.docs / self.REPORT_PATH).write_text("next rig's in-progress assessment\n")
+        self.verify_report(controller=True)  # dirty work by the next owner cannot regrade completed work
+        self.docs_git("add", "--", self.REPORT_PATH)
+        self.docs_commit("docs: next rig", "--only", "--", self.REPORT_PATH)
+        self.verify_report(controller=True)
+        self.assertEqual(self.report_json(), first_receipt)
+        self.assertIn("pinned history", self.publish(ok=False).stderr)
+
+    def test_embedded_operation_digest_is_not_a_spec_baseline(self):
+        self.settle()
+        operation = "build-app-" + self.baseline["digest"]
+        self.state["operations"][operation] = self.state["operations"].pop("build-1")
+        self.baseline["operation"] = operation
+        self.write("baseline", self.baseline)
+        self.beads["workflow-1"]["metadata"]["gc.var.operation"] = operation
+        content = self.report_document().replace("Approved spec digest: " + self.baseline["digest"] + "\n", "")
+        commit = self.commit_report(content)
+        self.receipt(commit)
+        self.assertIn("standalone baseline", self.verify_report(ok=False).stderr)
+
+    def test_later_operation_updates_same_report_and_preserves_old_receipt(self):
+        self.settle()
+        first = self.commit_report()
+        old_receipt = self.receipt(first)
+        old_baseline = copy.deepcopy(self.baseline)
+        old_spec = self.spec.read_text()
+        self.verify_report()
+        old_blob = self.docs_git("show", f"{first}:{self.REPORT_PATH}")
+
+        # A changed approved snapshot and new operation still address one document.
+        self.baseline.update(operation="build-2", revision="b" * 40)
+        self.spec.write_text(self.spec.read_text() + "\nUpdated approved behavior.\n")
+        self.baseline["files"]["spec.md"]["sha256"] = self.hash(self.spec)
+        self.baseline["digest"] = hashlib.sha256(encoded(self.baseline["files"]).encode()).hexdigest()
+        self.write("baseline", self.baseline)
+        self.state["operations"]["build-2"] = copy.deepcopy(self.state["operations"]["build-1"])
+        self.state["operations"]["build-2"]["approved"] = {
+            "revision": self.baseline["revision"], "digest": self.baseline["digest"]}
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.beads["workflow-1"]["metadata"]["gc.var.operation"] = "build-2"
+        second = self.commit_report()
+        self.receipt(second)
+        self.verify_report()
+        self.assertEqual(self.docs_git("ls-tree", "-r", "--name-only", "HEAD", f"{self.REPORT_PATH.rsplit('/', 1)[0]}/"), self.REPORT_PATH)
+        self.assertEqual(self.docs_git("show", f"{first}:{self.REPORT_PATH}"), old_blob)
+        self.assertEqual(old_receipt["commit"], first)
+        self.assertEqual(old_receipt["id"], self.report_json()["id"])
+
+        # A completed operation's historical receipt cannot publish a stale report.
+        self.baseline = old_baseline
+        self.spec.write_text(old_spec)
+        self.write("baseline", self.baseline)
+        self.write("report", old_receipt)
+        self.beads["workflow-1"]["metadata"]["gc.var.operation"] = "build-1"
+        self.state["report_owner"] = "build-1"
+        self.beads["city-1"]["metadata"]["omg.state"] = encoded(self.state)
+        self.assertIn("changed after", self.verify_report(ok=False).stderr)
 
     def test_report_requires_settled_operation(self):
         self.settle()
@@ -860,6 +971,7 @@ else:
                 # The controller check is offline: it passes with the remote unreachable
                 # and without any Git credentials, because it checks the retained proof.
                 self.git("remote", "set-url", "origin", "git@example.invalid:omg/docs.git")
+                self.complete_report()
                 self.verify_report(controller=True)
                 # Tampered or inconsistent proof fails.
                 for field, value in [("observed", self.head), ("pushed", self.head), ("base", "0" * 40),
@@ -904,6 +1016,7 @@ else:
         self.assertEqual(self.remote_tip(self.branch), second)
         self.assertEqual(self.report_json()["publication"]["base"], self.head)
         self.verify_report()
+        self.complete_report()
         self.verify_report(controller=True)
 
     def test_moved_remote_fails_closed_before_any_push(self):
@@ -1113,11 +1226,12 @@ else:
                     self.assertNotIn(key, receipt)
                 for key in ["operation", "workflow", "build_outcome", "revision", "path", "id", "sha256", "commit"]:
                     self.assertEqual(receipt[key], before[key])
-                self.verify_report(controller=True)
                 # A clean local receipt is left byte-for-byte alone.
                 raw = (self.root / "report.json").read_bytes()
                 self.assertEqual(self.publish(extra_env=env).json, {"status": "local", "destination": None, "normalized": False})
                 self.assertEqual((self.root / "report.json").read_bytes(), raw)
+                self.complete_report()
+                self.verify_report(controller=True)
 
     def test_preflight_failures_never_touch_the_receipt(self):
         ref = self.authorized()
@@ -1140,7 +1254,7 @@ else:
         self.assertEqual((result.json["status"], result.json["reason"]), ("failed", "remote"))
         self.assertIn("Could not read from remote repository", result.json["error"])
         self.assertEqual((self.root / "report.json").read_bytes(), published)
-        self.verify_report(controller=True)  # the published state is still provable offline
+        self.verify_report()  # the published state is still provable offline before completion
         self.git("remote", "set-url", "origin", real)
         # 3. Outgoing history with an unrelated commit below a new report revision.
         (self.repo / "app.txt").write_text("later unpublished code\n")

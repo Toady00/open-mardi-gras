@@ -6,25 +6,51 @@ Do not assume that normal reconciliation, finalization or publication ran.
 Reconstruct requirement reconciliation from `{{approved_root}}`, revision
 `{{approved_revision}}`, when the normal path failed.
 
-Load `hindsight-shipping` for the authoritative format contract. Write a
-Hindsight-compatible `build-report` Markdown document under the initiative's
-original repository at `docs/initiatives/<slug>/reports/{{operation}}.md`, with a
-stable ID `build-report.<slug>.{{operation}}`, `status: draft` and `source: agent`.
-Include approved direction and spec commit/digest, target rig, native workflow ID,
-the launch operation key, assessed code SHA, every requirement's
-implemented/partial/deferred/blocked outcome, evidence, deviations, reasons,
-decision authority, unresolved risks and unfinished work. Explicitly distinguish
-implemented, reviewed, and actually published/integrated code. Do not infer
-post-merge verification. Follow Hindsight's rules for agent-authored records; do
-not claim human review that has not occurred.
+If the initiative records this operation's report completion, verify its pinned
+receipt with `verify --stage report` and close the work step without editing or
+publishing it again. A later rig may already have updated the maintained report.
+On a retry with report.json already present, first run `verify --stage report
+--root {{artifact_root}} --plan`. If the artifact passes, resume publication and
+verification without editing or reacquiring, then finish/close the step. This
+preserves the original acquired base for a publication-only retry.
+
+On the first attempt, or any retry needing assessment/receipt repair, run
+`gc {{omg_binding}} initiative settle {{initiative}} --operation {{operation}}
+--workflow <actual-root-id>` for the actual terminal workflow, then acquire the
+initiative's report with `gc {{omg_binding}} initiative begin-report {{initiative}}
+--operation {{operation}}`. A competing owner blocks editing; wait for its report
+to finish. Hold ownership through reading, editing, committing, publication and
+verification. Re-entering the same ownership preserves the acquired base and any
+in-progress edits. If a report-only commit already exists with that parent blob,
+repair its receipt rather than manufacture a new commit. If its content needs
+another revision, acquire a new draft with `begin-report ... --revision <current
+initiative-repository-HEAD>` before editing. Merge this rig's assessment into the
+current report rather than restoring an older draft.
+
+Load `hindsight-shipping` for the authoritative format contract. Follow the
+`omg-build` skill's cumulative initiative report procedure. Update the one
+Hindsight-compatible report in the initiative's original repository at
+`docs/initiatives/<slug>/reports/build-report.md`, with stable ID
+`build-report.{{initiative}}`, `status: draft` and `source: agent`. Read the existing
+report before editing; if absent, create it from the assessed repository. Assess
+existing code as well as this operation's delivery. Include approved direction and spec commit/digest,
+target rig, assessing operation and code SHA, every current requirement's
+implemented/partial/deferred/blocked outcome, evidence and remaining deviations,
+decision authority, unresolved risks and unfinished work. Present one cumulative
+assessment, preserving valid content and removing resolved failures rather than
+narrating attempts. Do not infer post-merge verification or human review.
+For the target rig, include these standalone body lines using the actual values:
+`Assessed rig: <rig-name>`, `Approved spec revision: <baseline.revision>`, and
+`Approved spec digest: <baseline.digest>`. Preserve other rigs' separate baselines.
 
 Separate native execution from source-task bookkeeping. Read the exact drain
 manifest, item workflow/finalizer outcomes and receipts; open source tasks alone
-do not mean code quality failed. Include settlement command output and any
-settlement.json, listing pending source IDs and reasons. Unsupported revision CAS
-is pending bookkeeping. Report other conflicts and partial closures precisely,
-without claiming settlement or overall completion. Failed runs retain their source
-tasks and findings; do not close them as successful while writing this report.
+do not mean code quality failed. Keep settlement command output and settlement.json
+in the operation artifacts; put only still-pending source IDs/reasons and actionable
+conflicts in the report. Unsupported revision CAS is pending bookkeeping. Failed
+runs retain their source tasks and findings; do not close them as successful while
+writing this report. Record the exact native outcome and workflow ID in report.json
+and on the work bead, separately from the cumulative implementation assessment.
 
 Validate with the Hindsight pack schema, then commit the report in the initiative
 repository with a path-only commit: `git add -- <report-path>` followed by
@@ -34,8 +60,6 @@ as it was; never run a plain `git commit`, `git add -A` or `git stash` there. A
 dirty checkout does not block this step. That commit is the durable local artifact.
 Do not send IR/HTML/comparison artifacts or raw bead chatter to the bank.
 
-Record `gc {{omg_binding}} initiative settle {{initiative}} --operation {{operation}}
---workflow <actual-root-id>` once the workflow is terminal, before verification.
 Write `report.json` under `{{artifact_root}}` using the fields in the `omg-build`
 skill, with `status: local` and `remote_ref: null`: operation, workflow, the
 root's exact terminal `gc.outcome` as build outcome (`unknown` when it is missing
@@ -69,7 +93,11 @@ report.json before printing success. Exit 2 means the push succeeded but the
 receipt could not be written: rerun the command. Then run `gc {{omg_binding}}
 verify --stage report --root {{artifact_root}}`: it is offline and checks the
 artifact plus that evidence.
-The existing Hindsight pipeline ships canonical revisions.
+The existing Hindsight pipeline ships canonical revisions. After verification
+passes, run `gc {{omg_binding}} initiative finish-report {{initiative}} --operation
+{{operation}}` to record completion and release ownership before closing the work
+step. A failed report retains ownership for recovery; do not start a new build
+against a half-written assessment.
 
 Also record report path, hash, revision, commit, ref or publication failure, and
 any PR URL on this work bead. Mark gc.outcome=pass and close the assigned step when

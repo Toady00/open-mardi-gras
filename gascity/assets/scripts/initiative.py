@@ -535,7 +535,7 @@ def main(argv=None):
                                      "review", "ready", "decision", "revise", "accept",
                                      "materialize", "generate", "refine", "start",
                                      "recover", "abandon", "settle", "check", "resolve",
-                                     "watch", "notify", "complete-step"])
+                                      "watch", "notify", "complete-step", "begin-report", "finish-report"])
     p.add_argument("bead", nargs="?")
     p.add_argument("--slug")
     p.add_argument("--title")
@@ -717,6 +717,43 @@ def main(argv=None):
             raise ValueError("no approved snapshot")
         print(materialize(state, snap, args.bead))
         return
+    elif action in {"begin-report", "finish-report"}:
+        op = state["operations"].get(args.operation)
+        if not op or op.get("kind") != "start" or op.get("phase") != "settled":
+            raise ValueError("report editing requires a settled build operation")
+        owner = state.get("report_owner")
+        if owner and owner != args.operation:
+            raise ValueError(f"initiative report is owned by {owner}; wait for its report to finish")
+        path = safe_relative(state["directory"] + "/reports/build-report.md")
+        if action == "begin-report":
+            if op.get("report_complete"):
+                raise ValueError("this operation's report is complete; do not overwrite a later assessment")
+            if owner != args.operation and git(state["repo"], "status", "--porcelain", "--", path).strip():
+                raise ValueError("report has uncommitted edits; inspect and preserve them before acquiring it")
+            prior = subprocess.run(["git", "-C", state["repo"], "rev-parse", "--verify", f"HEAD:{path}"],
+                                   capture_output=True, text=True)
+            if prior.returncode and git(state["repo"], "ls-tree", "HEAD", "--", path).strip():
+                raise ValueError("cannot resolve the committed report blob")
+            if args.revision and args.revision != git(state["repo"], "rev-parse", "HEAD").decode().strip():
+                raise ValueError("a new report draft requires --revision equal to the current initiative repository HEAD")
+            # Re-entering the same lease resumes the owner's edits/commit, even
+            # after a crash before receipt creation. Reset only for a new draft.
+            if owner != args.operation or args.revision:
+                op["report_base"] = prior.stdout.strip() if prior.returncode == 0 else None
+            state["report_owner"] = args.operation
+        else:
+            if owner != args.operation and not op.get("report_complete"):
+                raise ValueError("acquire the report with begin-report before finishing it")
+            run("bash", str(Path(__file__).with_name("verify.sh")), "--stage", "report",
+                "--root", op["artifact_root"], "--city", ledger.city, "--rig", op["rig"])
+            receipt = json.loads((Path(op["artifact_root"]) / "report.json").read_text())
+            op["report_complete"] = dict(commit=receipt["commit"], sha256=receipt["sha256"], at=now())
+            if owner == args.operation:
+                state.pop("report_owner", None)
+        ledger.save(args.bead, old, state)
+        print(encoded(dict(operation=args.operation, path=path, report_base=op.get("report_base"),
+                           complete=op.get("report_complete"))))
+        return
     elif action in {"generate", "refine", "start"}:
         intent = authority(args)
         if not state.get("direction"):
@@ -785,6 +822,11 @@ def main(argv=None):
             print(encoded(state["operations"][key]))
             return
         if action == "start":
+            if state.get("report_owner") or any(
+                    o.get("kind") == "start" and
+                    o.get("phase") == "settled" and not o.get("report_complete")
+                    for o in state["operations"].values()):
+                raise ValueError("initiative report is pending; finish its report step before planning a new build")
             for tool in ("bash", "jq", "yq", "git", "shasum"):
                 if not shutil.which(tool):
                     raise ValueError(f"build verification requires {tool} on PATH")

@@ -79,6 +79,13 @@ deduplicated retry path with separate artifacts; revised specs require new appro
 
 ## Local-only report completion
 
+The report is now one maintained initiative document at
+`docs/initiatives/<slug>/reports/build-report.md`, identified by
+`build-report.<initiative-bead-id>`. Planning reads it, compares its spec/code
+baselines and consults current Hindsight conventions. Reporting preserves valid
+assessments and updates current gaps without accumulating attempt history or
+lessons learned. Operation receipts still pin their own historical report commits.
+
 The first no-push trial left its report bead blocked: the report step required
 canonical Git publication unconditionally, while the build had authorized none.
 The correction makes the report a checked teardown step. The architect commits

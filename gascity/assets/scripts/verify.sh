@@ -79,11 +79,21 @@ if [[ "$stage" == report ]]; then
   # exactly that shape rather than trusting a concatenated path.
   [[ "$docs_dir" =~ ^docs/initiatives/([a-z0-9][a-z0-9-]*)$ && "${BASH_REMATCH[1]}" == "$slug" ]] || fail 'initiative directory must be docs/initiatives/<slug> for the recorded slug'
   [[ "$operation" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 'operation key is not a safe file name'
-  report_path="$docs_dir/reports/$operation.md"
+  report_path="$docs_dir/reports/build-report.md"
+  report_id="build-report.$initiative"
+  jq -e --arg o "$operation" '
+    (.report_owner == $o or .operations[$o].report_complete != null) and
+    (.operations[$o] | has("report_base"))
+  ' <<<"$state" >/dev/null || fail 'report requires initiative begin-report ownership or a completed report receipt'
   json report
   report=$(<"$root/report.json")
-  jq -e --arg o "$operation" --arg p "$report_path" --argjson s "$state" 'def text: type == "string" and length > 0;
-    .operation == $o and .path == $p and (.id | text) and (.sha256 | text) and (.commit | text) and
+  completed=$(jq -r --arg o "$operation" '.operations[$o].report_complete != null' <<<"$state")
+  [[ -z "$plan" || "$completed" != true ]] || fail 'completed report is pinned history; it cannot be republished by this operation'
+  jq -e --arg o "$operation" --argjson r "$report" '
+    .operations[$o].report_complete as $c | $c == null or ($c.commit == $r.commit and $c.sha256 == $r.sha256)
+  ' <<<"$state" >/dev/null || fail 'completed operation receipt cannot be replaced with a different report revision'
+  jq -e --arg o "$operation" --arg p "$report_path" --arg id "$report_id" --argjson s "$state" 'def text: type == "string" and length > 0;
+    .operation == $o and .path == $p and .id == $id and (.sha256 | text) and (.commit | text) and
     (.revision | text) and (.workflow | text) and .workflow == $s.operations[$o].workflow and
     (.build_outcome | IN("pass", "fail", "skipped", "canceled", "unknown"))
   ' <<<"$report" >/dev/null || fail 'report receipt must name this operation, its settled workflow, the canonical report path, identity, hash, commit, assessed revision and build outcome'
@@ -113,17 +123,33 @@ if [[ "$stage" == report ]]; then
   [[ $(git -C "$docs_repo" rev-list --parents -n 1 "$commit" | wc -w) -eq 2 ]] || fail 'report commit must be a single ordinary commit'
   [[ "$(git -C "$docs_repo" diff-tree --no-commit-id --name-only -r "$commit")" == "$report_path" ]] || fail 'report commit must change only the report'
   [[ "$(git -C "$docs_repo" cat-file -t "$commit:$report_path" 2>/dev/null)" == blob ]] || fail 'report commit does not contain the report'
+  previous_blob=$(git -C "$docs_repo" rev-parse --verify "$commit^:$report_path" 2>/dev/null || true)
+  [[ "$previous_blob" == "$(jq -r --arg o "$operation" '.operations[$o].report_base // ""' <<<"$state")" ]] \
+    || fail 'report base changed; reacquire and merge the current assessment before editing'
   blob=$(mktemp "${TMPDIR:-/tmp}/omg-report.XXXXXX"); trap 'rm -f "$blob"' EXIT
   git -C "$docs_repo" show "$commit:$report_path" > "$blob"
   [[ "$(hash "$blob")" == "$sha" ]] || fail 'report hash does not match the committed report'
-  [[ -f "$docs_repo/$report_path" && "$(hash "$docs_repo/$report_path")" == "$sha" ]] || fail 'report changed after its recorded commit'
-  [[ -z "$(git -C "$docs_repo" status --porcelain --untracked-files=all -- "$report_path")" ]] || fail 'report working copy differs from its commit'
+  if [[ "$completed" != true ]]; then
+    [[ -f "$docs_repo/$report_path" && "$(hash "$docs_repo/$report_path")" == "$sha" ]] || fail 'report changed after its recorded commit'
+    [[ -z "$(git -C "$docs_repo" status --porcelain --untracked-files=all -- "$report_path")" ]] || fail 'report working copy differs from its commit'
+  fi
   yq --front-matter=extract -o=json '.' "$blob" 2>/dev/null | jq -e --argjson b "$baseline" --argjson r "$report" '
     .schema_version == 2 and .type == "build-report" and .status == "draft" and .source == "agent" and
     (.title | type == "string" and length > 0) and .id == $r.id and
     (.id | test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and (.id as $id | all($b.files[]; .id != $id))
   ' >/dev/null || fail 'report needs Hindsight schema 2 agent-authored build-report frontmatter with a unique identity'
   grep -qF -- "$revision" "$blob" && grep -qF -- "$operation" "$blob" || fail 'report must cite the assessed revision and the launch operation'
+  # Standalone labels prevent the digest embedded in operation keys from passing
+  # as a spec baseline, and identify the assessing rig in a multi-rig document.
+  python3 - "$blob" "$baseline" "$state" <<'PY' || fail 'report must cite this rig and its assessed spec revision and snapshot digest on standalone baseline lines'
+import json, re, sys
+text = open(sys.argv[1]).read()
+b, s = map(json.loads, sys.argv[2:])
+rig = s['operations'][b['operation']]['rig']
+for label, value in [('Assessed rig', rig), ('Approved spec revision', b['revision']), ('Approved spec digest', b['digest'])]:
+    if not re.search(r'^' + re.escape(label) + r':\s*`?' + re.escape(value) + r'`?\s*$', text, re.M):
+        sys.exit(1)
+PY
   # Report publication has no authority of its own. It is authorized only by
   # the build's finalized publication receipt for a passed root, and only when
   # the report lives in the same checkout whose code that receipt published:
@@ -151,9 +177,16 @@ if [[ "$stage" == report ]]; then
     exit 0
   fi
   status=$(jq -r '.status' <<<"$report")
+  report_done() {
+    if [[ -n "$check_bead" ]]; then
+      [[ "$completed" == true && "$(jq -r '.report_owner // ""' <<<"$state")" != "$operation" ]] \
+        || fail 'controller report check requires initiative finish-report completion and released ownership'
+    fi
+    printf '{"outcome":"pass"}\n'; exit 0
+  }
   if [[ -z "$destination" ]]; then
     [[ "$status" == local ]] && jq -e '.remote_ref == null' <<<"$report" >/dev/null || fail 'no build publication receipt authorizes this repository; the report stays local'
-    printf '{"outcome":"pass"}\n'; exit 0
+    report_done
   fi
   # This check runs offline, in the controller sandbox. The remote was read and
   # written by `report publish` under the worker's own Git identity, which
@@ -179,7 +212,7 @@ if [[ "$stage" == report ]]; then
     [[ $(git -C "$docs_repo" rev-list --parents -n 1 "$outgoing" | wc -w) -eq 2 && "$(git -C "$docs_repo" diff-tree --no-commit-id --name-only -r "$outgoing")" == "$report_path" ]] \
       || fail "outgoing commit $outgoing beyond the assessed revision is not a report-only commit"
   done < <(git -C "$docs_repo" rev-list "$base..$commit")
-  printf '{"outcome":"pass"}\n'; exit 0
+  report_done
 fi
 json plan
 jq -e 'def text: type == "string" and length > 0;

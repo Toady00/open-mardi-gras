@@ -26,6 +26,8 @@ gc omg initiative materialize BEAD [--input specs]
 gc omg initiative recover BEAD --operation KEY --workflow ROOT --authority TEXT
 gc omg initiative abandon BEAD --operation KEY --launcher-stopped --note REASON --authority TEXT
 gc omg initiative settle BEAD --operation KEY --workflow ROOT
+gc omg initiative begin-report BEAD --operation KEY [--revision CURRENT_HEAD]
+gc omg initiative finish-report BEAD --operation KEY
 ```
 
 Use the actual import binding in place of `omg`. For launch operations under a
@@ -53,6 +55,22 @@ baseline is never overwritten, and a baseline write failure leaves a `launching`
 operation for `abandon`. Omitted `--push`/`--open-pr` mean no code publication.
 The standalone OMG formula uses [verify](../verify/help.md) for mechanical checks
 and OMG's builder, tester and reviewer for implementation evidence.
+
+`begin-report` acquires exclusive report ownership through the initiative metadata
+CAS for a settled build and records the committed report blob before editing.
+Other operations wait; retries preserve the same owner's acquired base and
+in-progress edits or reconstruct a missing receipt for its report-only commit.
+To intentionally revise an already committed report under that ownership, pass
+`--revision` equal to current initiative-repository HEAD to acquire a new draft.
+Dirty report files block a new owner without altering them.
+`finish-report` runs report verification, pins completion and releases ownership.
+Failed verification retains ownership for recovery; completed operations cannot
+reacquire it. A new launch waits while report ownership or a settled
+operation's report is pending. Existing request receipts still deduplicate.
+If a report step exhausts attempts, repair its recorded blocker and re-drive the
+same operation's reporting procedure through begin-report, path-only commit/receipt,
+report publish, verify and finish-report. Do not clear ownership by hand or launch
+a new build to bypass pending reporting. See the trial guide's recovery procedure.
 
 Init infers the initiating rig from `GC_RIG`, otherwise uses the city. An explicit
 empty `--rig ''` selects city scope. The owner repository must be a Git root.

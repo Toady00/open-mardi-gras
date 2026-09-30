@@ -118,9 +118,18 @@ code-quality check. Other conflicts or partial settlement must be reported witho
 claiming completion. Never close tasks unconditionally or retrofit
 `gc.source_bead_id`. Failed runs preserve open source tasks and findings.
 
-The final report belongs at `docs/initiatives/<id>/reports/<operation>.md` in the
-original document repository. It distinguishes implemented, reviewed and published
-code. Check the `omg-report` bead separately because it runs after root settlement,
+The initiative's maintained report belongs at
+`docs/initiatives/<slug>/reports/build-report.md` in the original document repository,
+with stable ID `build-report.<initiative-bead-id>`. Planning reads it and compares
+its spec revision/digest and assessed code SHA with the approved snapshot and
+current repository, using current conventions from Hindsight. Reporting edits it
+to preserve valid assessments, update changed requirements and remove resolved
+failures. It describes cumulative implementation and remaining differences, not
+attempt history or lessons learned, and distinguishes implemented, reviewed and
+published code. Reporting acquires initiative ownership with `begin-report` before
+reading/editing and releases it with `finish-report` after checked completion;
+competing writers wait. Failed reports retain ownership for recovery, and new
+launches wait when a settled report is pending. Check the `omg-report` bead separately because it runs after root settlement,
 including failed builds. A stalled infrastructure operation must settle or be
 explicitly failed before its report can run.
 Reconcile/finalize verification gates execution evidence, not source-task closure.
@@ -143,16 +152,21 @@ bead with its local commit and the exact Git error.
 gc omg verify --stage report --root <absolute-artifact-root>
 ```
 
-## Upgrading an earlier trial
+## Recovering interrupted reporting
 
-New builds do not reference the old validator wrappers or cached environments.
-Existing in-flight workflows retain their cooked graph and may still need them;
-finish or explicitly retire those runs before removing their managed files.
-The historical locations were `<city>/.gc/omg-build/runtimes/`,
-`<rig>/.gc/scripts/checks/build-artifact-valid.sh` and its receipt, and
-`<rig>/.gc/scripts/omg-build/bin/`. Inspect ownership before cleanup. OMG does not
-delete existing runtime files during this update. Remove official-pack imports
-from consuming config only if no other workflows there use them.
+If reporting exhausts its attempts or the owner session is lost, inspect the
+initiative's report_owner, that operation's artifacts and the report work bead.
+Resume that same operation's reporting procedure after repairing the blocker.
+First settle its actual terminal root if necessary. Re-enter begin-report under
+the same operation; it preserves interrupted edits and the acquired parent blob.
+If a report-only commit exists but its receipt was lost, reconstruct report.json
+for that commit. If the committed content needs another draft, use begin-report
+with `--revision` equal to the initiative repository's current HEAD. Then run
+report publish, verify --stage report and finish-report, and close/re-drive the
+report work as appropriate. Completed reports only need their pinned artifact
+verified before closing a crash-stranded step. Never clear report_owner manually;
+completion releases it only after validation. This recovery grants no additional
+publication authority.
 
 ## Verification boundary
 

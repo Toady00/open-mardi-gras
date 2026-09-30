@@ -322,24 +322,24 @@ Hindsight provenance update without treating it as a substantive spec revision.<
     SPECS{{"Human approves selected specs through conversation"}}
     ACCEPTED["Accepted record and status publication&lt;br/&gt;No build launch"]
     START{{"Human explicitly requests a build in a selected rig"}}
-    PREP["Check local tools and freeze approved Git blobs&lt;br/&gt;Write operation baseline and absolute artifact root"]
+    PREP["Require no owned or settled-pending report&lt;br/&gt;Check local tools and freeze approved Git blobs&lt;br/&gt;Write operation baseline and absolute artifact root"]
     PREPFAIL["Fix the reported input or tool error&lt;br/&gt;No launch intent or source bead created"]
     INTENT["Persist launch intent before native dispatch&lt;br/&gt;Repeated request returns receipt;&lt;br/&gt;ambiguous acknowledgement requires recovery"]
     RECOVER{"Launcher exited; inspect exact launch store&lt;br/&gt;Does workflow evidence exist?"}
     BIND["Recover the matching native workflow"]
     ABANDON["Human-authorized abandonment of failed launch&lt;br/&gt;Preserve attempt and source in history; no dispatch"]
     INSPECT["Resolve store access or inspect relocated graph storage&lt;br/&gt;Keep launch unresolved"]
-    NATIVE["Standalone omg-build&lt;br/&gt;Architect plans directly from approved specs&lt;br/&gt;Independent reviewer checks plan and inventory; up to 3 attempts"]
+    NATIVE["Standalone omg-build&lt;br/&gt;Architect reads maintained initiative report and approved specs&lt;br/&gt;Compare spec/code baselines, inspect repo, consult current Hindsight conventions&lt;br/&gt;Plan changes and verification of reused work; independent review, up to 3 attempts"]
     DECOMP["Architect creates development work beads and convoy&lt;br/&gt;Downstream checks retained separately with owner and stage&lt;br/&gt;Mechanical coverage and membership check; up to 3 attempts"]
     IMPL["Gas City shared single-lane drain through omg-work&lt;br/&gt;Builder implements and tests each member; up to 3 attempts&lt;br/&gt;Source tasks stay open; stop remaining items on failure"]
     QUALITY["Builder repairs prior findings&lt;br/&gt;Tester verifies integrated code&lt;br/&gt;Independent reviewer records and verifies finding beads"]
     CHECK{"Controller runs quality gate after review&lt;br/&gt;Exact successful native manifest, item workflows and finalizers&lt;br/&gt;Current passing receipts; required findings resolved"}
     RECON["Write reconciliation and pass execution/evidence gate&lt;br/&gt;Downstream pending; required test artifacts delivered&lt;br/&gt;Optional settlement preview/apply with advertised revision CAS&lt;br/&gt;Unsupported or conflicting bookkeeping stays explicit and pending"]
     FINAL["OMG finalization and authorized local/push/PR handoff&lt;br/&gt;Single checked publication receipt&lt;br/&gt;No deployment or PR-approval claim"]
-    REPORT["Post-workflow-settlement architect report; checked teardown, up to 3 attempts&lt;br/&gt;Success, partial, blocked, failed and canceled builds; exact root outcome&lt;br/&gt;Assessed SHA; implemented vs reviewed vs published; pending source IDs/reasons&lt;br/&gt;Path-only report commit in the initiative repository; local is complete"]
+    REPORT["Post-settlement architect acquires initiative report ownership via CAS&lt;br/&gt;Checked teardown, up to 3 attempts; competing owners wait&lt;br/&gt;Read current report, or assess repository to create it; update one cumulative assessment&lt;br/&gt;Preserve valid rows; remove resolved gaps; per-rig spec/code baselines&lt;br/&gt;Path-only commit; check prior blob; finish-report pins completion and releases owner"]
     SHIP["Canonical remote Markdown revisions&lt;br/&gt;Existing Hindsight pipeline and receipts"]
     RETRY{{"Human explicitly requests retry of settled failed build"}}
-    RETRYCHECK["Verify failed root, same rig and approval, no active attempt&lt;br/&gt;New operation/source/artifacts; preserve old report&lt;br/&gt;Repeated retry request returns its receipt"]
+    RETRYCHECK["Verify failed root, same rig and approval, no active attempt&lt;br/&gt;New operation/source/artifacts; preserve execution history&lt;br/&gt;Same maintained report; repeated retry request returns its receipt"]
     TALK --&gt; IR --&gt; INITIAL --&gt; REFINE
     EDIT --&gt; REFINE
     INITIAL --&gt;|"human choice needed"| INTERRUPT
@@ -399,7 +399,10 @@ inspection rather than inferring absence from an incomplete federated listing.</
 <p>OMG owns the build methodology and worker prompts. The Gas City engine owns the
 graph, convoy drains, check attempts and scope settlement. Build checks use the
 same Bash/yq/jq/Python implementation as <code>gc omg verify</code>, resolved directly from pack
-assets. They install no runtime dependencies. Plans read original approved specs;
+assets. They install no runtime dependencies. Plans read original approved specs
+and the existing initiative report, compare its spec/code baselines with the new
+snapshot and actual repository, and consult current Hindsight conventions. Reuse
+compliant work with appropriate verification rather than rebuilding it;
 private execution JSON records hold evidence. Specs carry an approved omg-delivery
 classification in their bodies, distinct from Hindsight frontmatter. Snapshot
 creation and build verification share its parser. Reclassification changes the
@@ -429,7 +432,27 @@ completion claim. No unconditional closure or <code>gc.source_bead_id</code> ret
 allowed. Failed runs preserve source tasks and findings. After <code>initiative settle</code>
 records the terminal root, the architect commits only the report (<code>git commit --only</code>) in the initiative repository and records report.json; <code>verify --stage report</code> checks the settled operation, the root&#39;s exact outcome (<code>unknown</code> when
 absent), the validated <code>docs/initiatives/&lt;slug&gt;</code> path, single-path commit, hash,
-frontmatter and cited revision before any remote write. <code>local</code> is the complete
+frontmatter and cited code/spec revisions and snapshot digest before any remote write.
+One maintained report at <code>docs/initiatives/&lt;slug&gt;/reports/build-report.md</code>, with
+stable ID <code>build-report.&lt;initiative-bead-id&gt;</code>, describes cumulative implementation.
+Valid assessments survive subsequent passes; changed requirements are reassessed
+and resolved failures disappear. Multi-rig sections retain their own baselines.
+Attempt history and lessons learned do not accumulate here; operation receipts
+pin each historical report commit. Completed operations verify that pinned artifact
+even after a later edit, but <code>--plan</code> and publication refuse completed operations.
+The architect acquires <code>initiative begin-report</code> ownership through metadata CAS
+before reading/editing, recording the prior report blob. Another operation waits;
+intervening blob changes fail verification and require merging current content.
+The same owner resumes interrupted edits and commits without resetting that blob;
+an intentional new draft explicitly acquires the current HEAD as its new baseline.
+<code>initiative finish-report</code> verifies and pins completion before releasing ownership.
+The native controller check requires completion and released ownership, while the
+worker check can run under ownership before pinning.
+Failed reporting retains ownership for recovery. Completed operations cannot
+reacquire the report; new starts wait while it is owned or a settled
+operation&#39;s report is pending. Target-rig standalone baseline lines prevent an
+operation key&#39;s embedded digest from substituting for an explicit spec assessment.
+<code>local</code> is the complete
 outcome and is neither publication nor Hindsight shipping. The report is published
 only when a passed build&#39;s finalized publication receipt pushed code from the
 same checkout, to exactly that receipt&#39;s ref (the PR branch for <code>open_pr</code>). The

@@ -109,7 +109,9 @@ this initiative in app" when you want implementation to begin.
 
 `initiative start` checks local tools and freezes the original approved Git blobs.
 It writes a baseline inventory and supplies an operation-specific absolute runtime
-artifact root. The architect reads those specs directly when planning. OMG owns
+artifact root. The architect reads those specs and the maintained initiative build
+report, compares spec/code baselines with the actual repository, and consults current
+Hindsight conventions when planning changes and verification of reusable work. OMG owns
 the execution-record contract in the [build skill](skills/omg-build/SKILL.md).
 There is no requirements translation or official build-artifact schema dependency.
 
@@ -166,8 +168,15 @@ activation prerequisites. Useful Archify views are chosen by question, rather
 than defaulting to workflow charts; visual-check sidecars live under `.omg/`.
 
 Build reporting runs as native post-settlement work, including on failure. Its
-completion is separate from the build root's terminal status. Reports distinguish
-implemented, reviewed and actually published code against the pinned spec revision.
+completion is separate from the build root's terminal status. One cumulative report
+at `docs/initiatives/<slug>/reports/build-report.md`, with stable ID
+`build-report.<initiative-bead-id>`, distinguishes implemented, reviewed and actually
+published code against each rig's assessed spec revision/digest and code SHA.
+Later passes edit it in place, preserving valid assessments, updating changed
+requirements and removing resolved gaps. Attempt history remains in operation
+artifacts, not the report.
+Initiative metadata CAS serializes report writers with `begin-report`/`finish-report`;
+the verifier checks the prior report blob, and pending reports block new launches.
 The report step is checked: the architect commits only the report (`git commit
 --only`) in the initiative repository and records its receipt. That local commit
 completes the step as `local`, neither published nor shipped, unless a passed
@@ -273,8 +282,7 @@ The standalone build formula uses Gas City's shared single-lane convoy drain for
 implementation and checked repair/test/review groups. Scope failure aborts remaining
 build work; teardown preserves the final report. Both command and formula checks
 execute the same shipped verify.sh through supported pack asset paths. The current
-workflow requires a shared local rig checkout. See the trial guide for migration
-from earlier wrappers and environments.
+workflow requires a shared local rig checkout.
 
 The drain leaves implementation source tasks open. Quality validates the exact
 successful native manifest, item workflows and finalizers, plus current passing
